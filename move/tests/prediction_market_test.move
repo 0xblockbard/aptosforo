@@ -334,6 +334,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 100_000;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -346,9 +349,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // test view get market
         let (
@@ -563,8 +566,7 @@ module optimistic_oracle_addr::prediction_market_test {
 
 
     #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
-    #[expected_failure(abort_code = ERROR_MARKET_ALREADY_EXISTS, location = prediction_market)]
-    public entry fun test_identical_market_cannot_be_initialized_again(
+    public entry fun test_identical_market_can_be_initialized_again_since_we_go_by_market_id(
         aptos_framework: &signer,
         prediction_market: &signer,
         user_one: &signer,
@@ -680,6 +682,9 @@ module optimistic_oracle_addr::prediction_market_test {
         // get balance
         let initial_initializer_balance = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -700,12 +705,15 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user two to call assert_market
         prediction_market::assert_market(
@@ -731,21 +739,21 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
+        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
-        let identifier   = DEFAULT_IDENTIFIER;
+        // let identifier   = DEFAULT_IDENTIFIER;
 
-        let assertion_id = prediction_market::get_assertion_id(
-            user_two_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     user_two_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // get market view
         let (
@@ -992,6 +1000,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 100_000;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -1008,9 +1019,9 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_two; // we assert outcome two is correct now
@@ -1022,6 +1033,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let disputer_addr       = user_three_addr;
         let settle_caller       = user_one;
         let settle_caller_addr  = user_one_addr;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user two to call assert_market
         prediction_market::assert_market(
@@ -1066,21 +1080,21 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
+        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
         let identifier   = DEFAULT_IDENTIFIER;
 
-        let assertion_id = prediction_market::get_assertion_id(
-            asserter_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     asserter_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // ----------------------------------
         // Outcome Tokens interactions test
@@ -1316,6 +1330,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 100_000;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // ----------------------------------
         // Initialize Market
         // ----------------------------------
@@ -1332,9 +1349,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_two; // we assert outcome two is correct now
@@ -1350,6 +1367,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let disputer_addr       = user_three_addr;
         let settle_caller       = user_one;
         let settle_caller_addr  = user_one_addr;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user two to call assert_market
         prediction_market::assert_market(
@@ -1394,21 +1414,21 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
+        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
         let identifier   = DEFAULT_IDENTIFIER;
 
-        let assertion_id = prediction_market::get_assertion_id(
-            asserter_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     asserter_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
         
         // ----------------------------------
         // Outcome Tokens interactions test
@@ -1627,6 +1647,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let image_url               = b"Image URL of Market";
         let reward                  = 100_000; 
         let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
         
         // get balance
         let initial_initializer_balance = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
@@ -1651,12 +1674,15 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome    = UNRESOLVABLE; // we assert outcome is unresolvable
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user two to call assert_market
         prediction_market::assert_market(
@@ -1682,21 +1708,21 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
+        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
-        let identifier   = DEFAULT_IDENTIFIER;
+        // let identifier   = DEFAULT_IDENTIFIER;
 
-        let assertion_id = prediction_market::get_assertion_id(
-            user_two_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     user_two_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // get market view
         let (
@@ -1933,6 +1959,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 100_000;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -1945,9 +1974,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2027,6 +2056,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 100_000;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -2039,9 +2071,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2114,6 +2146,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 100_000;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -2126,9 +2161,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2202,6 +2237,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 100_000;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -2214,9 +2252,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2297,6 +2335,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -2309,18 +2350,21 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
         // init roles
         let asserter            = user_one;
-        let asserter_addr       = user_one_addr;
+        // let asserter_addr       = user_one_addr;
         let disputer            = user_two;
         let _disputer_addr      = user_two_addr;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user one to call assert_market
         prediction_market::assert_market(
@@ -2330,30 +2374,30 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
-        let liveness     = DEFAULT_MIN_LIVENESS;
-        let identifier   = DEFAULT_IDENTIFIER;
+        // let time         = timestamp::now_microseconds();  
+        // let liveness     = DEFAULT_MIN_LIVENESS;
+        // let identifier   = DEFAULT_IDENTIFIER;
 
         // calc bond to be transferred
-        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        let bond;
-        if(required_bond > minimum_bond){
-            bond = required_bond;
-        } else {
-            bond = minimum_bond;
-        };
+        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        // let bond;
+        // if(required_bond > minimum_bond){
+        //     bond = required_bond;
+        // } else {
+        //     bond = minimum_bond;
+        // };
 
-        let assertion_id = prediction_market::get_assertion_id(
-            asserter_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     asserter_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // user two disputes assertion
         prediction_market::dispute_assertion(
@@ -2430,6 +2474,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -2442,18 +2489,21 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
         // init roles
         let asserter            = user_one;
-        let asserter_addr       = user_one_addr;
+        // let asserter_addr       = user_one_addr;
         let disputer            = user_two;
         let _disputer_addr      = user_two_addr;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user one to call assert_market
         prediction_market::assert_market(
@@ -2463,36 +2513,37 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
-        let liveness     = DEFAULT_MIN_LIVENESS;
-        let identifier   = DEFAULT_IDENTIFIER;
+        // let time         = timestamp::now_microseconds();  
+        // let liveness     = DEFAULT_MIN_LIVENESS;
+        // let identifier   = DEFAULT_IDENTIFIER;
 
         // calc bond to be transferred
-        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        let bond;
-        if(required_bond > minimum_bond){
-            bond = required_bond;
-        } else {
-            bond = minimum_bond;
-        };
+        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        // let bond;
+        // if(required_bond > minimum_bond){
+        //     bond = required_bond;
+        // } else {
+        //     bond = minimum_bond;
+        // };
 
-        let assertion_id = prediction_market::get_assertion_id(
-            asserter_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     asserter_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // user two disputes assertion
         prediction_market::dispute_assertion(
             disputer,
             assertion_id
         );
+
     }
 
 
@@ -2564,6 +2615,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -2576,18 +2630,21 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
         // init roles
         let asserter            = user_one;
-        let asserter_addr       = user_one_addr;
+        // let asserter_addr       = user_one_addr;
         let disputer            = user_two;
         let _disputer_addr      = user_two_addr;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user one to call assert_market
         prediction_market::assert_market(
@@ -2597,30 +2654,30 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
+        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
-        let identifier   = DEFAULT_IDENTIFIER;
+        // let identifier   = DEFAULT_IDENTIFIER;
 
         // calc bond to be transferred
-        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        let bond;
-        if(required_bond > minimum_bond){
-            bond = required_bond;
-        } else {
-            bond = minimum_bond;
-        };
+        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        // let bond;
+        // if(required_bond > minimum_bond){
+        //     bond = required_bond;
+        // } else {
+        //     bond = minimum_bond;
+        // };
 
-        let assertion_id = prediction_market::get_assertion_id(
-            asserter_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     asserter_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // fast forward to liveness over (after assertion has expired)
         timestamp::fast_forward_seconds(liveness + 1);
@@ -2701,6 +2758,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -2713,18 +2773,21 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
         // init roles
         let asserter            = user_one;
-        let asserter_addr       = user_one_addr;
+        // let asserter_addr       = user_one_addr;
         let disputer            = user_two;
         let _disputer_addr      = user_two_addr;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user one to call assert_market
         prediction_market::assert_market(
@@ -2734,30 +2797,30 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
-        let liveness     = DEFAULT_MIN_LIVENESS;
-        let identifier   = DEFAULT_IDENTIFIER;
+        // let time         = timestamp::now_microseconds();  
+        // let liveness     = DEFAULT_MIN_LIVENESS;
+        // let identifier   = DEFAULT_IDENTIFIER;
 
         // calc bond to be transferred
-        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        let bond;
-        if(required_bond > minimum_bond){
-            bond = required_bond;
-        } else {
-            bond = minimum_bond;
-        };
+        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        // let bond;
+        // if(required_bond > minimum_bond){
+        //     bond = required_bond;
+        // } else {
+        //     bond = minimum_bond;
+        // };
 
-        let assertion_id = prediction_market::get_assertion_id(
-            asserter_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     asserter_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // user two disputes assertion
         prediction_market::dispute_assertion(
@@ -2844,6 +2907,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 100_000;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -2860,9 +2926,9 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2873,6 +2939,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let disputer            = user_three;
         let disputer_addr       = user_three_addr;
         let settle_caller       = user_one;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user two to call assert_market
         prediction_market::assert_market(
@@ -2899,21 +2968,21 @@ module optimistic_oracle_addr::prediction_market_test {
         // ----------------------------------
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
+        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
         let identifier   = DEFAULT_IDENTIFIER;
 
-        let assertion_id = prediction_market::get_assertion_id(
-            asserter_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     asserter_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // ----------------------------------
         // Dispute Assertion
@@ -3132,11 +3201,11 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
 
-        let wrong_description   = b"Wrong";
-        let wrong_market_id     = prediction_market::get_market_id(user_one_addr, time_bytes, wrong_description);
+        // let wrong_description   = b"Wrong";
+        let wrong_market_id     = 999;
 
         // create some outcome tokens for user one
         let tokens_to_create = 1000;
@@ -3213,6 +3282,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -3225,16 +3297,16 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // create some outcome tokens for user one
         let tokens_to_create = 1000;
         prediction_market::create_outcome_tokens(user_one, market_id, tokens_to_create);
 
-        let wrong_description   = b"Wrong";
-        let wrong_market_id     = prediction_market::get_market_id(user_one_addr, time_bytes, wrong_description);
+        // let wrong_description   = b"Wrong";
+        let wrong_market_id     = 999;
         
         // redeem should fail
         let tokens_to_redeem = 500;
@@ -3311,6 +3383,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -3323,9 +3398,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = b"invalid outcome"; 
@@ -3412,6 +3487,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -3424,9 +3502,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome    = outcome_one; 
@@ -3527,6 +3605,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -3539,9 +3620,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome    = outcome_one; 
@@ -3552,6 +3633,9 @@ module optimistic_oracle_addr::prediction_market_test {
 
         // init roles
         let asserter            = user_two;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user two to call assert_market
         prediction_market::assert_market(
@@ -3564,30 +3648,30 @@ module optimistic_oracle_addr::prediction_market_test {
         // Get assertion id 
         // ----------------------------------
 
-        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        let bond;
-        if(required_bond > minimum_bond){
-            bond =  required_bond;
-        } else {
-            bond = minimum_bond;
-        };
+        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        // let bond;
+        // if(required_bond > minimum_bond){
+        //     bond =  required_bond;
+        // } else {
+        //     bond = minimum_bond;
+        // };
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
-        let liveness     = DEFAULT_MIN_LIVENESS;
-        let identifier   = DEFAULT_IDENTIFIER;
+        // let time         = timestamp::now_microseconds();  
+        // let liveness     = DEFAULT_MIN_LIVENESS;
+        // let identifier   = DEFAULT_IDENTIFIER;
 
-        let assertion_id = prediction_market::get_assertion_id(
-            user_two_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     user_two_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // should fail: cannot settle assertion before expiration
         prediction_market::settle_assertion(
@@ -3666,6 +3750,9 @@ module optimistic_oracle_addr::prediction_market_test {
         let reward                  = 0; 
         let required_bond           = 1;
 
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
         // call initialize_market
         prediction_market::initialize_market(
             user_one,
@@ -3678,9 +3765,9 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // get market id
-        let current_timestamp   = timestamp::now_microseconds();  
-        let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // let current_timestamp   = timestamp::now_microseconds();  
+        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
+        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome    = outcome_one; 
@@ -3691,6 +3778,9 @@ module optimistic_oracle_addr::prediction_market_test {
 
         // init roles
         let asserter            = user_two;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
 
         // user two to call assert_market
         prediction_market::assert_market(
@@ -3703,30 +3793,30 @@ module optimistic_oracle_addr::prediction_market_test {
         // Get assertion id 
         // ----------------------------------
 
-        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        let bond;
-        if(required_bond > minimum_bond){
-            bond =  required_bond;
-        } else {
-            bond = minimum_bond;
-        };
+        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        // let bond;
+        // if(required_bond > minimum_bond){
+        //     bond =  required_bond;
+        // } else {
+        //     bond = minimum_bond;
+        // };
 
         // compose claim
-        let claim = prediction_market::compose_claim(asserted_outcome, description);
+        // let claim = prediction_market::compose_claim(asserted_outcome, description);
 
         // get the assertion id
-        let time         = timestamp::now_microseconds();  
+        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
-        let identifier   = DEFAULT_IDENTIFIER;
+        // let identifier   = DEFAULT_IDENTIFIER;
 
-        let assertion_id = prediction_market::get_assertion_id(
-            user_two_addr,
-            claim,
-            time,
-            bond,
-            liveness,
-            identifier
-        );
+        // let assertion_id = prediction_market::get_assertion_id(
+        //     user_two_addr,
+        //     claim,
+        //     time,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
 
         // fast forward to liveness over (after assertion has expired)
         timestamp::fast_forward_seconds(liveness + 1);
