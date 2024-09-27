@@ -61,6 +61,13 @@ module optimistic_oracle_addr::prediction_market {
     const ERROR_INVALID_ASSERTED_OUTCOME: u64               = 24;
     const ERROR_MARKET_HAS_BEEN_RESOLVED: u64               = 25;
     const ERROR_MARKET_HAS_NOT_BEEN_RESOLVED: u64           = 26;
+    const ERROR_POOL_ALREADY_INITIALIZED: u64               = 27;
+    const ERROR_POOL_NOT_INITIALIZED: u64                   = 28;
+    const ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED: u64      = 29;
+    const ERROR_INSUFFICIENT_LP_BALANCE: u64                = 30;
+    const ERROR_INVALID_OUTCOME: u64                        = 31;
+    const ERROR_INSUFFICIENT_OUTPUT_AMOUNT: u64             = 32;
+    const ERROR_INSUFFICIENT_POOL_OUTCOME_TOKENS: u64       = 33;
 
     // -----------------------------------
     // Constants
@@ -70,6 +77,7 @@ module optimistic_oracle_addr::prediction_market {
 
     const DEFAULT_MIN_LIVENESS: u64                   = 7200; // 2 hours
     const DEFAULT_FEE: u64                            = 1000;
+    const DEFAULT_SWAP_FEE_PERCENT: u128              = 2;    // 0.02%
     const DEFAULT_BURNED_BOND_PERCENTAGE: u64         = 1000;
     const DEFAULT_TREASURY_ADDRESS: address           = @optimistic_oracle_addr;
     const DEFAULT_IDENTIFIER: vector<u8>              = b"YES/NO";        // Identifier used for all prediction markets.
@@ -77,6 +85,9 @@ module optimistic_oracle_addr::prediction_market {
 
     const DEFAULT_OUTCOME_TOKEN_ICON: vector<u8>      = b"http://example.com/favicon.ico";
     const DEFAULT_OUTCOME_TOKEN_WEBSITE: vector<u8>   = b"http://example.com";
+
+    const DEFAULT_MIN_LIQUIDITY_REQUIRED: u128         = 100;
+    const FIXED_POINT_ACCURACY: u128                  = 1_000_000_000_000_000_000;  // 10^18 for fixed point arithmetic
     
     // -----------------------------------
     // Structs
@@ -107,6 +118,9 @@ module optimistic_oracle_addr::prediction_market {
 
         outcome_token_one_address: address,
         outcome_token_two_address: address,
+        
+        pool_initialized: bool,
+        pool_initializer: option::Option<address>
     }
 
     /// Markets Struct
@@ -152,6 +166,23 @@ module optimistic_oracle_addr::prediction_market {
         assertion_to_asserter: SmartTable<u64, address>,
         next_assertion_id: u64
     }
+
+    struct LiquidityPool has key, store {
+        market_id: u64,
+        initializer: address,
+        
+        outcome_token_one_reserve: u128,      // amount of protocol tokens backing outcome token one 
+        outcome_token_two_reserve: u128,      // amount of protocol tokens backing outcome token two
+                
+        lp_total_supply: u128,
+        lp_token_metadata: Object<Metadata>,
+        lp_token_address: address
+    }
+
+    struct LiquidityPools has key, store {
+        pools: SmartTable<u64, LiquidityPool>, // market_id -> LiquidityPool
+    }
+
 
     /// AdminProperties Struct 
     struct AdminProperties has key, store {
@@ -478,7 +509,10 @@ module optimistic_oracle_addr::prediction_market {
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             outcome_token_one_address,
-            outcome_token_two_address
+            outcome_token_two_address,
+
+            pool_initialized: false,
+            pool_initializer: option::none()
         };
 
         // update creator markets
@@ -883,148 +917,465 @@ module optimistic_oracle_addr::prediction_market {
     }
 
 
-    // Mints pair of tokens representing the value of outcome1 and outcome2. Trading of outcome tokens is outside of the
-    // scope of this contract. 
-    public entry fun create_outcome_tokens(
-        minter: &signer,
-        market_id: u64, 
-        tokens_to_create: u64
-    ) acquires Markets, MarketRegistry, Management, AdminProperties {
-
-        let oracle_signer_addr     = get_oracle_signer_addr();
-        let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
-        let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
-        let minter_addr            = signer::address_of(minter);
-
-        // get creator address from registry (and verify that market exists)
-        let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+    public entry fun initialize_pool(
+        initializer: &signer,
+        market_id: u64,
+        collateral_amount: u128
+    ) acquires LiquidityPools, Markets, MarketRegistry, OracleSigner, AdminProperties {
         
-        // get creator markets
-        let markets                = borrow_global_mut<Markets>(creator_address);
+        let oracle_signer_addr  = get_oracle_signer_addr();
+        let oracle_signer       = get_oracle_signer(oracle_signer_addr);
+        let admin_properties    = borrow_global<AdminProperties>(oracle_signer_addr);
+        let initializer_addr    = signer::address_of(initializer);
 
-        // find market by id
-        let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
+        // check if initializer has LiquidityPools struct
+        if (!exists<LiquidityPools>(initializer_addr)) {
+            move_to(initializer, LiquidityPools {
+                pools: smart_table::new(),
+            });
+        };
+        let liquidity_pools = borrow_global_mut<LiquidityPools>(initializer_addr);
 
-        // verify market has not been resolved
+        // get the market
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        let creator_address     = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        let markets             = borrow_global_mut<Markets>(creator_address);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+        // check that the market has not been resolved
         assert!(market.resolved == false, ERROR_MARKET_HAS_BEEN_RESOLVED);
 
-        // transfer currency tokens (i.e. oracle tokens) from minter to module
+        // check that the pool has not been initialized already, update market info pool initializer
+        assert!(market.pool_initialized == false, ERROR_POOL_ALREADY_INITIALIZED);
+        market.pool_initializer = option::some(initializer_addr);
+
+        // create LP Token
+        let lp_token_symbol: vector<u8> = b"LP Token";
+        let lp_token_constructor_ref = object::create_named_object(&oracle_signer, lp_token_symbol);
+        primary_fungible_store::create_primary_store_enabled_fungible_asset(
+            &lp_token_constructor_ref,
+            option::none(),
+            utf8(b"LP Token"),
+            utf8(b"LP"),
+            8,
+            utf8(b"http://example.com/favicon.ico"),
+            utf8(b"http://example.com"),
+        );
+        let lp_token_metadata_signer = object::generate_signer(&lp_token_constructor_ref);
+
+        // For LP Token
+        // let mint_ref     = fungible_asset::generate_mint_ref(&lp_token_constructor_ref);
+        // let transfer_ref = fungible_asset::generate_transfer_ref(&lp_token_constructor_ref);
+        move_to(&lp_token_metadata_signer,
+            Management {
+                extend_ref: object::generate_extend_ref(&lp_token_constructor_ref),
+                mint_ref: fungible_asset::generate_mint_ref(&lp_token_constructor_ref),
+                burn_ref: fungible_asset::generate_burn_ref(&lp_token_constructor_ref),
+                transfer_ref: fungible_asset::generate_transfer_ref(&lp_token_constructor_ref),
+            },
+        );
+        let lp_token_address  = signer::address_of(&lp_token_metadata_signer);
+        let lp_token_metadata = object::address_to_object(lp_token_address);
+
+        // fixed point math
+        let half_collateral_amount = ((collateral_amount * FIXED_POINT_ACCURACY) / 2) / FIXED_POINT_ACCURACY;
+
+        // create LiquidityPool struct
+        let pool = LiquidityPool {
+            market_id,
+            initializer: initializer_addr,
+
+            outcome_token_one_reserve: half_collateral_amount,
+            outcome_token_two_reserve: half_collateral_amount,
+
+            lp_total_supply: half_collateral_amount,
+            lp_token_metadata,
+            lp_token_address
+        };
+
+        // update liquidity pools
+        smart_table::add(&mut liquidity_pools.pools, market_id, pool);
+
+        // calculate if min liquidity reached
+        assert!(collateral_amount >= DEFAULT_MIN_LIQUIDITY_REQUIRED, ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED);
+
+        // transfer currency collateral tokens (i.e. oracle tokens) from initializer to module
         let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
-        primary_fungible_store::transfer(minter, currency_metadata, oracle_signer_addr, tokens_to_create);
+        primary_fungible_store::transfer(initializer, currency_metadata, oracle_signer_addr, (collateral_amount as u64));
+
+        // // Mint LP Token to initializer
+        let initializer_wallet = primary_fungible_store::ensure_primary_store_exists(initializer_addr, lp_token_metadata);
+        let fa = fungible_asset::mint(&fungible_asset::generate_mint_ref(&lp_token_constructor_ref), (half_collateral_amount as u64));
+        fungible_asset::deposit_with_ref(&fungible_asset::generate_transfer_ref(&lp_token_constructor_ref), initializer_wallet, fa);
+
+    }
+
+
+    public entry fun deposit_liquidity(
+        user: &signer,
+        market_id: u64,
+        amount: u128
+    ) acquires LiquidityPools, Markets, MarketRegistry, Management, AdminProperties {
+        
+        let oracle_signer_addr  = get_oracle_signer_addr();
+        let admin_properties    = borrow_global<AdminProperties>(oracle_signer_addr);
+        let user_addr           = signer::address_of(user);
+
+        // get the market
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        let creator_address     = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        let markets             = borrow_global_mut<Markets>(creator_address);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+        // check that the market has not been resolved
+        assert!(market.resolved == false, ERROR_MARKET_HAS_BEEN_RESOLVED);
+
+        // check that the pool has been initialized already
+        assert!(market.pool_initialized == true, ERROR_POOL_NOT_INITIALIZED);
+        
+        // get liquidity pool info
+        let initializer_addr    = option::destroy_some(market.pool_initializer);
+        let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
+        let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
+
+        // get lp token metadata
+        let lp_token_metadata       = liquidity_pool.lp_token_metadata;
+        let lp_token_mint_ref       = &borrow_global<Management>(market.outcome_token_one_address).mint_ref;
+        let lp_token_transfer_ref   = &borrow_global<Management>(market.outcome_token_one_address).transfer_ref;
+
+        // calculate lp tokens to mint
+        let collateral_token_reserve = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
+        let lp_tokens_to_mint        = (((amount * liquidity_pool.lp_total_supply * FIXED_POINT_ACCURACY)) / collateral_token_reserve) / FIXED_POINT_ACCURACY;
+
+        // calculate proportional amount to increase for each outcome token 
+        let outcome_token_one_reserve_proportion = ((liquidity_pool.outcome_token_one_reserve * FIXED_POINT_ACCURACY) / collateral_token_reserve);
+        let outcome_token_one_increase           = (outcome_token_one_reserve_proportion * amount) / FIXED_POINT_ACCURACY;
+        let outcome_token_two_increase           = amount - outcome_token_one_increase;
+
+        // register increases in liquidity pool
+        liquidity_pool.outcome_token_one_reserve = liquidity_pool.outcome_token_one_reserve + outcome_token_one_increase;
+        liquidity_pool.outcome_token_two_reserve = liquidity_pool.outcome_token_two_reserve + outcome_token_two_increase;
+        liquidity_pool.lp_total_supply           = liquidity_pool.lp_total_supply + lp_tokens_to_mint;
+
+        // transfer currency collateral tokens (i.e. oracle tokens) from minter to module
+        let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
+        primary_fungible_store::transfer(user, currency_metadata, oracle_signer_addr, (amount as u64));
+
+        // Mint LP Token to LP 
+        let user_wallet = primary_fungible_store::ensure_primary_store_exists(user_addr, lp_token_metadata);
+        let fa = fungible_asset::mint(lp_token_mint_ref, (lp_tokens_to_mint as u64));
+        fungible_asset::deposit_with_ref(lp_token_transfer_ref, user_wallet, fa);
+
+    }
+
+
+    public entry fun withdraw_liquidity(
+        user: &signer,
+        market_id: u64,
+        lp_token_amount: u64
+    ) acquires LiquidityPools, Markets, MarketRegistry, Management, AdminProperties, OracleSigner {
+        
+        let oracle_signer_addr  = get_oracle_signer_addr();
+        let oracle_signer       = get_oracle_signer(oracle_signer_addr);
+        let admin_properties    = borrow_global<AdminProperties>(oracle_signer_addr);
+        let user_addr           = signer::address_of(user);
+
+        // get the market
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        let creator_address     = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        let markets             = borrow_global_mut<Markets>(creator_address);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+        // check that the market has not been resolved
+        assert!(market.resolved == false, ERROR_MARKET_HAS_BEEN_RESOLVED);
+
+        // check that the pool has been initialized already
+        assert!(market.pool_initialized == true, ERROR_POOL_NOT_INITIALIZED);
+        
+        let initializer_addr    = option::destroy_some(market.pool_initializer);
+        let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
+        let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
+
+        // get lp token metadata
+        let lp_token_metadata   = liquidity_pool.lp_token_metadata;
+        let lp_token_burn_ref   = &borrow_global<Management>(liquidity_pool.lp_token_address).burn_ref;
+
+        // calculate proportion of LP and outcome tokens
+        let lp_proportion = ((lp_token_amount as u128) * FIXED_POINT_ACCURACY) / liquidity_pool.lp_total_supply;
+        let outcome_token_one_withdraw_amount = (liquidity_pool.outcome_token_one_reserve * lp_proportion) / FIXED_POINT_ACCURACY;
+        let outcome_token_two_withdraw_amount = (liquidity_pool.outcome_token_two_reserve * lp_proportion) / FIXED_POINT_ACCURACY;
+
+        // update liquidity pool
+        liquidity_pool.outcome_token_one_reserve = liquidity_pool.outcome_token_one_reserve - outcome_token_one_withdraw_amount;
+        liquidity_pool.outcome_token_two_reserve = liquidity_pool.outcome_token_two_reserve - outcome_token_two_withdraw_amount;
+        liquidity_pool.lp_total_supply           = liquidity_pool.lp_total_supply - (lp_token_amount as u128);
+
+        // burn user LP tokens
+        let user_lp_fa = primary_fungible_store::withdraw(user, lp_token_metadata, lp_token_amount);
+        fungible_asset::burn(lp_token_burn_ref, user_lp_fa);
+
+        // transfer collateral tokens back to the user
+        let collateral_amount = outcome_token_one_withdraw_amount + outcome_token_two_withdraw_amount;
+        let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
+        primary_fungible_store::transfer(&oracle_signer, currency_metadata, user_addr, (collateral_amount as u64));
+
+    }
+
+
+    public entry fun buy_outcome_tokens(
+        user: &signer,
+        market_id: u64,
+        outcome_token: vector<u8>,
+        amount: u128
+    ) acquires LiquidityPools, Markets, MarketRegistry, Management, AdminProperties {
+        
+        let oracle_signer_addr  = get_oracle_signer_addr();
+        let admin_properties    = borrow_global<AdminProperties>(oracle_signer_addr);
+        let user_addr           = signer::address_of(user);
+
+        // get the market
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        let creator_address     = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        let markets             = borrow_global_mut<Markets>(creator_address);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+        // check that the market has not been resolved
+        assert!(market.resolved == false, ERROR_MARKET_HAS_BEEN_RESOLVED);
+
+        // check that the pool has been initialized already
+        assert!(market.pool_initialized == true, ERROR_POOL_NOT_INITIALIZED);
+        
+        let initializer_addr    = option::destroy_some(market.pool_initializer);
+        let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
+        let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
+
+        assert!(outcome_token == b"one" || outcome_token == b"two", ERROR_INVALID_OUTCOME);
+
+        // get total pool reserves
+        let total_pool_reserves = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
+
+        // calculate amount less fees (liquidity provider incentives)
+        let amountLessFees = (amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
+
+        let (token_metadata, token_reserve, token_address) = 
+        if(outcome_token == b"one"){
+            (market.outcome_token_one_metadata, liquidity_pool.outcome_token_one_reserve, market.outcome_token_one_address)
+        } else {
+            (market.outcome_token_two_metadata, liquidity_pool.outcome_token_two_reserve, market.outcome_token_two_address)
+        };
+
+        // calculate amount to mint
+        let token_amount_mint   = (((amountLessFees * token_reserve * FIXED_POINT_ACCURACY) / total_pool_reserves) / FIXED_POINT_ACCURACY);
+
+        // Get the management resource for the outcome token
+        let mint_ref     = &borrow_global<Management>(token_address).mint_ref;
+        let transfer_ref = &borrow_global<Management>(token_address).transfer_ref;
+
+        // Ensure the user's wallet is ready to receive the minted tokens
+        let minter_wallet = primary_fungible_store::ensure_primary_store_exists(user_addr, token_metadata);
+        let fa = fungible_asset::mint(mint_ref, (token_amount_mint as u64));
+        fungible_asset::deposit_with_ref(transfer_ref, minter_wallet, fa);
+
+        // Update the liquidity pool reserves
+        if(outcome_token == b"one"){
+            liquidity_pool.outcome_token_one_reserve = liquidity_pool.outcome_token_one_reserve + amount;
+        } else {
+            liquidity_pool.outcome_token_two_reserve = liquidity_pool.outcome_token_two_reserve + amount;
+        };
+
+        // transfer currency tokens (i.e. oracle tokens) from user to module
+        let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
+        primary_fungible_store::transfer(user, currency_metadata, oracle_signer_addr, (amount as u64));
+
+    }
+
+
+    public entry fun sell_outcome_tokens(
+        user: &signer,
+        market_id: u64,
+        outcome_token: vector<u8>,
+        amount: u128
+    ) acquires LiquidityPools, Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
+        
+        let oracle_signer_addr  = get_oracle_signer_addr();
+        let oracle_signer       = get_oracle_signer(oracle_signer_addr);
+        let admin_properties    = borrow_global<AdminProperties>(oracle_signer_addr);
+        let user_addr           = signer::address_of(user);
+
+        // get the market
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        let creator_address     = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        let markets             = borrow_global_mut<Markets>(creator_address);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+        // check that the market has not been resolved
+        assert!(market.resolved == false, ERROR_MARKET_HAS_BEEN_RESOLVED);
+
+        // check that the pool has been initialized already
+        assert!(market.pool_initialized == true, ERROR_POOL_NOT_INITIALIZED);
+        
+        let initializer_addr    = option::destroy_some(market.pool_initializer);
+        let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
+        let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
+
+        assert!(outcome_token == b"one" || outcome_token == b"two", ERROR_INVALID_OUTCOME);
+
+        // get total pool reserves
+        let total_pool_reserves = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
+
+        // calculate amount less fees (liquidity provider incentives)
+        let amountLessFees = (amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
+
+        let (token_metadata, token_reserve, token_address) = 
+        if(outcome_token == b"one"){
+            (market.outcome_token_one_metadata, liquidity_pool.outcome_token_one_reserve, market.outcome_token_one_address)
+        } else {
+            (market.outcome_token_two_metadata, liquidity_pool.outcome_token_two_reserve, market.outcome_token_two_address)
+        };
+
+        // calculate amount of collateral token to transfer back 
+        let collateral_token_amount = (((amountLessFees * total_pool_reserves * FIXED_POINT_ACCURACY) / token_reserve) / FIXED_POINT_ACCURACY);
+
+        // Get the burn ref for the outcome token
+        let token_burn_ref = &borrow_global<Management>(token_address).burn_ref;
+        
+        // Burn outcome token
+        let token_fa = primary_fungible_store::withdraw(user, token_metadata, (amount as u64));
+        fungible_asset::burn(token_burn_ref, token_fa);
+
+        // Update the liquidity pool reserves
+        if(outcome_token == b"one"){
+            liquidity_pool.outcome_token_one_reserve = liquidity_pool.outcome_token_one_reserve - amount;
+        } else {
+            liquidity_pool.outcome_token_two_reserve = liquidity_pool.outcome_token_two_reserve - amount;
+        };
+
+        // transfer currency tokens (i.e. oracle tokens) from module to user
+        let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
+        primary_fungible_store::transfer(&oracle_signer, currency_metadata, user_addr, (collateral_token_amount as u64));
+
+    }
+
+
+    public entry fun redeem_lp_for_outcome_tokens(
+        redeemer: &signer,
+        market_id: u64,
+        amount: u128
+    ) acquires Markets, MarketRegistry, LiquidityPools, Management {
+
+        let oracle_signer_addr     = get_oracle_signer_addr();
+        let redeemer_addr          = signer::address_of(redeemer);
+
+        // get the market
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        let creator_address     = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        let markets             = borrow_global_mut<Markets>(creator_address);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+        // check that the pool has been initialized already
+        assert!(market.pool_initialized == true, ERROR_POOL_NOT_INITIALIZED);
+        
+        let initializer_addr    = option::destroy_some(market.pool_initializer);
+        let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
+        let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
 
         // Get the management resource for the outcome one token
         let token_one_mint_ref     = &borrow_global<Management>(market.outcome_token_one_address).mint_ref;
         let token_one_transfer_ref = &borrow_global<Management>(market.outcome_token_one_address).transfer_ref;
         let token_one_metadata     = market.outcome_token_one_metadata;
 
-        // Mint outcome token one
-        let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(minter_addr, token_one_metadata);
-        let fa = fungible_asset::mint(token_one_mint_ref, tokens_to_create);
-        fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
-
         // Get the management resource for the outcome two token
         let token_two_mint_ref     = &borrow_global<Management>(market.outcome_token_two_address).mint_ref;
         let token_two_transfer_ref = &borrow_global<Management>(market.outcome_token_two_address).transfer_ref;
         let token_two_metadata     = market.outcome_token_two_metadata;
 
-        // Mint outcome token two
-        let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(minter_addr, token_two_metadata);
-        let fa = fungible_asset::mint(token_two_mint_ref, tokens_to_create);
-        fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
+        // get and burn lp token 
+        let lp_token_metadata   = liquidity_pool.lp_token_metadata;
+        let lp_token_burn_ref   = &borrow_global<Management>(liquidity_pool.lp_token_address).burn_ref;
+        let user_lp_fa = primary_fungible_store::withdraw(redeemer, lp_token_metadata, (amount as u64));
+        fungible_asset::burn(lp_token_burn_ref, user_lp_fa);
 
-        // emit event for tokens created
-        event::emit(TokensCreatedEvent {
-            market_id,
-            account: minter_addr,
-            tokens_created: tokens_to_create
-        });
+        // let total_pool_reserves   = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
+        let lp_proportion         = (amount * FIXED_POINT_ACCURACY) / liquidity_pool.lp_total_supply;
+        let outcome_token_one_proportion_amount  = ((liquidity_pool.outcome_token_one_reserve * lp_proportion) / FIXED_POINT_ACCURACY);
+        let outcome_token_two_proportion_amount  = ((liquidity_pool.outcome_token_two_reserve * lp_proportion) / FIXED_POINT_ACCURACY);
+
+        // process redemption based on market state
+        if(market.resolved == true){
+
+            // only redeem the winning outcome token if market has been resolved
+            if(market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_one)){
+                // outcome one wins - mint outcome token one to redeemer
+                let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_one_metadata);
+                let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_proportion_amount as u64));
+                fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
+            } else if (market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_two)){
+                // outcome two wins - mint outcome token two to redeemer
+                let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_two_metadata);
+                let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_proportion_amount as u64));
+                fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
+            } else {
+                // unresolved - mint both
+                let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_one_metadata);
+                let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_proportion_amount as u64));
+                fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
+
+                let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_two_metadata);
+                let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_proportion_amount as u64));
+                fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
+
+            };
+
+        } else {
+
+            // redeem for both outcome tokens if market has not been resolved yet
+            let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_one_metadata);
+            let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_proportion_amount as u64));
+            fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
+
+            let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_two_metadata);
+            let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_proportion_amount as u64));
+            fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
+
+        };
+
     }
 
 
-    // Burns equal amount of outcome1 and outcome2 tokens returning settlement currency tokens.
-    public entry fun redeem_outcome_tokens(
-        redeemer: &signer,
-        market_id: u64, 
-        tokens_to_redeem: u64
-    ) acquires Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
-
-        let oracle_signer_addr     = get_oracle_signer_addr();
-        let oracle_signer          = get_oracle_signer(oracle_signer_addr);
-        let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
-        let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
-        let redeemer_addr          = signer::address_of(redeemer);
-
-        // get creator address from registry (and verify that market exists)
-        let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
-        
-        // get creator markets
-        let markets                = borrow_global_mut<Markets>(creator_address);
-
-        // find market by id
-        let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
-
-        // transfer currency tokens (i.e. oracle tokens) from module to oracle
-        let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
-        primary_fungible_store::transfer(&oracle_signer, currency_metadata, redeemer_addr, tokens_to_redeem);
-
-        // Get the management resource for the outcome one token
-        let token_one_burn_ref     = &borrow_global<Management>(market.outcome_token_one_address).burn_ref;
-        let token_one_metadata     = market.outcome_token_one_metadata;
-
-        // Burn outcome token one
-        let token_one_fa = primary_fungible_store::withdraw(redeemer, token_one_metadata, tokens_to_redeem);
-        fungible_asset::burn(token_one_burn_ref, token_one_fa);
-
-        // Get the management resource for the outcome two token
-        let token_two_burn_ref     = &borrow_global<Management>(market.outcome_token_two_address).burn_ref;
-        let token_two_metadata     = market.outcome_token_two_metadata;
-
-        // Burn outcome token two
-        let token_two_fa = primary_fungible_store::withdraw(redeemer, token_two_metadata, tokens_to_redeem);
-        fungible_asset::burn(token_two_burn_ref, token_two_fa);
-
-        // emit event for tokens redeemed
-        event::emit(TokensRedeemedEvent {
-            market_id,
-            account: redeemer_addr,
-            tokens_redeemed: tokens_to_redeem
-        });
-    }
-
-
-    // If the market is resolved, then all of caller's outcome tokens are burned and currency payout is made depending
-    // on the resolved market outcome and the amount of outcome tokens burned. If the market was resolved to the first
-    // outcome, then the payout equals balance of outcome1Token while outcome2Token provides nothing. If the market was
-    // resolved to the second outcome, then the payout equals balance of outcome2Token while outcome1Token provides
-    // nothing. If the market was resolved to the split outcome, then both outcome tokens provides half of their balance
-    // as currency payout.
     public entry fun settle_outcome_tokens(
         settler: &signer,
         market_id: u64
-    ) acquires Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
+    ) acquires Markets, MarketRegistry, LiquidityPools, Management, OracleSigner, AdminProperties {
 
         let oracle_signer_addr     = get_oracle_signer_addr();
         let oracle_signer          = get_oracle_signer(oracle_signer_addr);
-        let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
         let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
         let settler_addr           = signer::address_of(settler);
 
-        // get creator address from registry (and verify that market exists)
-        let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
-        
-        // get creator markets
-        let markets                = borrow_global_mut<Markets>(creator_address);
-
-        // find market by id
-        let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
+        // get the market
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        let creator_address     = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        let markets             = borrow_global_mut<Markets>(creator_address);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
 
         // verify market has been resolved
         assert!(market.resolved == true, ERROR_MARKET_HAS_NOT_BEEN_RESOLVED);
+        
+        // check that the pool has been initialized already
+        assert!(market.pool_initialized == true, ERROR_POOL_NOT_INITIALIZED);
+
+        // get liquidity pool info
+        let initializer_addr    = option::destroy_some(market.pool_initializer);
+        let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
+        let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
+
+        let token_one_reserve   = liquidity_pool.outcome_token_one_reserve;
+        let token_two_reserve   = liquidity_pool.outcome_token_two_reserve;
+        let total_pool_reserves = token_one_reserve + token_two_reserve;
 
         // Get the management resource for the outcome one token
         let token_one_burn_ref     = &borrow_global<Management>(market.outcome_token_one_address).burn_ref;
         let token_one_metadata     = market.outcome_token_one_metadata;
-
         let token_one_balance      = primary_fungible_store::balance(settler_addr, token_one_metadata);
 
         // Get the management resource for the outcome two token
@@ -1033,34 +1384,259 @@ module optimistic_oracle_addr::prediction_market {
         let token_two_balance      = primary_fungible_store::balance(settler_addr, token_two_metadata);
 
         let payout;
+        let token_one_burn_amount;
+        let token_two_burn_amount;
         if(market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_one)){
-            payout = token_one_balance; // outcome one
+            
+            // outcome one wins
+            // calc payout based on proportion 
+            let proportion = (((token_one_balance as u128) * FIXED_POINT_ACCURACY) / token_one_reserve);
+            payout         = (proportion * total_pool_reserves) / FIXED_POINT_ACCURACY;
+
+            token_one_burn_amount = token_one_balance;
+            token_two_burn_amount = token_two_balance;
+
         } else if (market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_two)){
-            payout = token_two_balance; // outcome two
+
+            // outcome two wins
+            // calc payout based on proportion 
+            let proportion = (((token_two_balance as u128) * FIXED_POINT_ACCURACY) / token_two_reserve);
+            payout         = (proportion * total_pool_reserves) / FIXED_POINT_ACCURACY;
+
+            token_one_burn_amount = token_one_balance;
+            token_two_burn_amount = token_two_balance;
+
         } else {
-            payout = (token_one_balance + token_two_balance) / 2;
+
+            // unresolved outcome
+            // $1 => one outcome token one + one outcome token two
+            if(token_one_balance >= token_two_balance){
+                // more token one than token two - we take the min * 2
+                payout = ((token_two_balance * 2) as u128);
+                
+                token_one_burn_amount = token_two_balance;
+                token_two_burn_amount = token_two_balance;
+
+            } else {
+                // more token two than token one - we take the min * 2
+                payout = ((token_one_balance * 2) as u128);
+
+                token_one_burn_amount = token_one_balance;
+                token_two_burn_amount = token_one_balance;
+            };
+
         };
 
         // Burn outcome tokens
-        let token_one_fa = primary_fungible_store::withdraw(settler, token_one_metadata, token_one_balance);
+        let token_one_fa = primary_fungible_store::withdraw(settler, token_one_metadata, token_one_burn_amount);
         fungible_asset::burn(token_one_burn_ref, token_one_fa);
 
-        let token_two_fa = primary_fungible_store::withdraw(settler, token_two_metadata, token_two_balance);
+        let token_two_fa = primary_fungible_store::withdraw(settler, token_two_metadata, token_two_burn_amount);
         fungible_asset::burn(token_two_burn_ref, token_two_fa);
 
         // transfer payout to settler
         let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
-        primary_fungible_store::transfer(&oracle_signer, currency_metadata, settler_addr, payout);
+        primary_fungible_store::transfer(&oracle_signer, currency_metadata, settler_addr, (payout as u64));
+
+        // update liquidity pool outcome token reserves
+        liquidity_pool.outcome_token_one_reserve - (token_one_burn_amount as u128);
+        liquidity_pool.outcome_token_two_reserve - (token_two_burn_amount as u128);
 
         // emit event for tokens settled
         event::emit(TokensSettledEvent {
             market_id,
             account: settler_addr,
-            payout,
-            outcome_one_tokens: token_one_balance,
-            outcome_two_tokens: token_two_balance
+            payout: (payout as u64),
+            outcome_one_tokens: token_one_burn_amount,
+            outcome_two_tokens: token_two_burn_amount
         });
     }
+    
+    
+    //
+    // 
+    //  Reference: Original outcome token mechanics from UMA Protocol Optimistic Oracle Prediction Market
+    // 
+    // 
+
+    // Mints pair of tokens representing the value of outcome1 and outcome2. Trading of outcome tokens is outside of the
+    // scope of this contract. 
+    // public entry fun create_outcome_tokens(
+    //     minter: &signer,
+    //     market_id: u64, 
+    //     tokens_to_create: u64
+    // ) acquires Markets, MarketRegistry, Management, AdminProperties {
+
+    //     let oracle_signer_addr     = get_oracle_signer_addr();
+    //     let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
+    //     let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
+    //     let minter_addr            = signer::address_of(minter);
+
+    //     // get creator address from registry (and verify that market exists)
+    //     let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        
+    //     // get creator markets
+    //     let markets                = borrow_global_mut<Markets>(creator_address);
+
+    //     // find market by id
+    //     let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+    //     // verify market has not been resolved
+    //     assert!(market.resolved == false, ERROR_MARKET_HAS_BEEN_RESOLVED);
+
+    //     // transfer currency tokens (i.e. oracle tokens) from minter to module
+    //     let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
+    //     primary_fungible_store::transfer(minter, currency_metadata, oracle_signer_addr, tokens_to_create);
+
+    //     // Get the management resource for the outcome one token
+    //     let token_one_mint_ref     = &borrow_global<Management>(market.outcome_token_one_address).mint_ref;
+    //     let token_one_transfer_ref = &borrow_global<Management>(market.outcome_token_one_address).transfer_ref;
+    //     let token_one_metadata     = market.outcome_token_one_metadata;
+
+    //     // Mint outcome token one
+    //     let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(minter_addr, token_one_metadata);
+    //     let fa = fungible_asset::mint(token_one_mint_ref, tokens_to_create);
+    //     fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
+
+    //     // Get the management resource for the outcome two token
+    //     let token_two_mint_ref     = &borrow_global<Management>(market.outcome_token_two_address).mint_ref;
+    //     let token_two_transfer_ref = &borrow_global<Management>(market.outcome_token_two_address).transfer_ref;
+    //     let token_two_metadata     = market.outcome_token_two_metadata;
+
+    //     // Mint outcome token two
+    //     let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(minter_addr, token_two_metadata);
+    //     let fa = fungible_asset::mint(token_two_mint_ref, tokens_to_create);
+    //     fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
+
+    //     // emit event for tokens created
+    //     event::emit(TokensCreatedEvent {
+    //         market_id,
+    //         account: minter_addr,
+    //         tokens_created: tokens_to_create
+    //     });
+    // }
+
+
+    // Burns equal amount of outcome1 and outcome2 tokens returning settlement currency tokens.
+    // public entry fun redeem_outcome_tokens(
+    //     redeemer: &signer,
+    //     market_id: u64, 
+    //     tokens_to_redeem: u64
+    // ) acquires Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
+
+    //     let oracle_signer_addr     = get_oracle_signer_addr();
+    //     let oracle_signer          = get_oracle_signer(oracle_signer_addr);
+    //     let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
+    //     let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
+    //     let redeemer_addr          = signer::address_of(redeemer);
+
+    //     // get creator address from registry (and verify that market exists)
+    //     let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        
+    //     // get creator markets
+    //     let markets                = borrow_global_mut<Markets>(creator_address);
+
+    //     // find market by id
+    //     let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+    //     // transfer currency tokens (i.e. oracle tokens) from module to oracle
+    //     let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
+    //     primary_fungible_store::transfer(&oracle_signer, currency_metadata, redeemer_addr, tokens_to_redeem);
+
+    //     // Get the management resource for the outcome one token
+    //     let token_one_burn_ref     = &borrow_global<Management>(market.outcome_token_one_address).burn_ref;
+    //     let token_one_metadata     = market.outcome_token_one_metadata;
+
+    //     // Burn outcome token one
+    //     let token_one_fa = primary_fungible_store::withdraw(redeemer, token_one_metadata, tokens_to_redeem);
+    //     fungible_asset::burn(token_one_burn_ref, token_one_fa);
+
+    //     // Get the management resource for the outcome two token
+    //     let token_two_burn_ref     = &borrow_global<Management>(market.outcome_token_two_address).burn_ref;
+    //     let token_two_metadata     = market.outcome_token_two_metadata;
+
+    //     // Burn outcome token two
+    //     let token_two_fa = primary_fungible_store::withdraw(redeemer, token_two_metadata, tokens_to_redeem);
+    //     fungible_asset::burn(token_two_burn_ref, token_two_fa);
+
+    //     // emit event for tokens redeemed
+    //     event::emit(TokensRedeemedEvent {
+    //         market_id,
+    //         account: redeemer_addr,
+    //         tokens_redeemed: tokens_to_redeem
+    //     });
+    // }
+
+
+    // If the market is resolved, then all of caller's outcome tokens are burned and currency payout is made depending
+    // on the resolved market outcome and the amount of outcome tokens burned. If the market was resolved to the first
+    // outcome, then the payout equals balance of outcome1Token while outcome2Token provides nothing. If the market was
+    // resolved to the second outcome, then the payout equals balance of outcome2Token while outcome1Token provides
+    // nothing. If the market was resolved to the split outcome, then both outcome tokens provides half of their balance
+    // as currency payout.
+    // public entry fun settle_outcome_tokens(
+    //     settler: &signer,
+    //     market_id: u64
+    // ) acquires Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
+
+    //     let oracle_signer_addr     = get_oracle_signer_addr();
+    //     let oracle_signer          = get_oracle_signer(oracle_signer_addr);
+    //     let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
+    //     let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
+    //     let settler_addr           = signer::address_of(settler);
+
+    //     // get creator address from registry (and verify that market exists)
+    //     let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        
+    //     // get creator markets
+    //     let markets                = borrow_global_mut<Markets>(creator_address);
+
+    //     // find market by id
+    //     let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+    //     // verify market has been resolved
+    //     assert!(market.resolved == true, ERROR_MARKET_HAS_NOT_BEEN_RESOLVED);
+
+    //     // Get the management resource for the outcome one token
+    //     let token_one_burn_ref     = &borrow_global<Management>(market.outcome_token_one_address).burn_ref;
+    //     let token_one_metadata     = market.outcome_token_one_metadata;
+
+    //     let token_one_balance      = primary_fungible_store::balance(settler_addr, token_one_metadata);
+
+    //     // Get the management resource for the outcome two token
+    //     let token_two_burn_ref     = &borrow_global<Management>(market.outcome_token_two_address).burn_ref;
+    //     let token_two_metadata     = market.outcome_token_two_metadata;
+    //     let token_two_balance      = primary_fungible_store::balance(settler_addr, token_two_metadata);
+
+    //     let payout;
+    //     if(market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_one)){
+    //         payout = token_one_balance; // outcome one
+    //     } else if (market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_two)){
+    //         payout = token_two_balance; // outcome two
+    //     } else {
+    //         payout = (token_one_balance + token_two_balance) / 2;
+    //     };
+
+    //     // Burn outcome tokens
+    //     let token_one_fa = primary_fungible_store::withdraw(settler, token_one_metadata, token_one_balance);
+    //     fungible_asset::burn(token_one_burn_ref, token_one_fa);
+
+    //     let token_two_fa = primary_fungible_store::withdraw(settler, token_two_metadata, token_two_balance);
+    //     fungible_asset::burn(token_two_burn_ref, token_two_fa);
+
+    //     // transfer payout to settler
+    //     let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
+    //     primary_fungible_store::transfer(&oracle_signer, currency_metadata, settler_addr, payout);
+
+    //     // emit event for tokens settled
+    //     event::emit(TokensSettledEvent {
+    //         market_id,
+    //         account: settler_addr,
+    //         payout,
+    //         outcome_one_tokens: token_one_balance,
+    //         outcome_two_tokens: token_two_balance
+    //     });
+    // }
 
     // -----------------------------------
     // Views
