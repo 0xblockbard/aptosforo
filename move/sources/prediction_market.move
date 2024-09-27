@@ -111,23 +111,24 @@ module optimistic_oracle_addr::prediction_market {
 
     /// Markets Struct
     struct Markets has key, store {
-        market_table: SmartTable<vector<u8>, Market> // Maps marketId to Market struct.
+        market_table: SmartTable<u64, Market> // Maps marketId to Market struct.
     }
 
     /// Asserted Market Struct
     struct AssertedMarket has key, store, drop {
         asserter: address,      // Address of the asserter used for reward payout.
-        market_id: vector<u8>   // Identifier for markets mapping.
+        market_id: u64          // Identifier for markets mapping.
     }
 
     /// AssertedMarkets Struct
     struct AssertedMarkets has key, store {
-        assertion_to_market: SmartTable<vector<u8>, AssertedMarket> // Maps assertion id to AssertedMarket
+        assertion_to_market: SmartTable<u64, AssertedMarket> // Maps assertion id to AssertedMarket
     }
 
     /// MarketRegistry Struct
     struct MarketRegistry has key, store {
-        market_to_creator: SmartTable<vector<u8>, address> // Maps market id to creator
+        market_to_creator: SmartTable<u64, address>, // Maps market id to creator
+        next_market_id: u64
     }
 
     /// Assertion Struct
@@ -144,11 +145,12 @@ module optimistic_oracle_addr::prediction_market {
     }
 
     struct AssertionTable has key, store {
-        assertions: SmartTable<vector<u8>, Assertion> // assertion_id: vector<u8>
+        assertions: SmartTable<u64, Assertion> // assertion_id: u64
     }
 
     struct AssertionRegistry has key, store {
-        assertion_to_asserter: SmartTable<vector<u8>, address>
+        assertion_to_asserter: SmartTable<u64, address>,
+        next_assertion_id: u64
     }
 
     /// AdminProperties Struct 
@@ -176,7 +178,7 @@ module optimistic_oracle_addr::prediction_market {
 
     #[event]
     struct AssertionMadeEvent has drop, store {
-        assertion_id: vector<u8>,
+        assertion_id: u64,
         claim: vector<u8>,
         identifier: vector<u8>,
         asserter: address,
@@ -188,13 +190,13 @@ module optimistic_oracle_addr::prediction_market {
 
     #[event]
     struct AssertionDisputedEvent has drop, store {
-        assertion_id: vector<u8>,
+        assertion_id: u64,
         disputer: address
     }
 
     #[event]
     struct AssertionSettledEvent has drop, store {
-        assertion_id: vector<u8>,
+        assertion_id: u64,
         bond_recipient: address,
         disputed: bool,
         settlement_resolution: bool,
@@ -205,7 +207,7 @@ module optimistic_oracle_addr::prediction_market {
     #[event]
     struct MarketInitializedEvent has drop, store {
         creator: address,
-        market_id: vector<u8>,
+        market_id: u64,
         outcome_one: vector<u8>,
         outcome_two: vector<u8>,
         description: vector<u8>,
@@ -222,33 +224,33 @@ module optimistic_oracle_addr::prediction_market {
 
     #[event]
     struct MarketAssertedEvent has drop, store {
-        market_id: vector<u8>,
+        market_id: u64,
         asserted_outcome: vector<u8>,
-        assertion_id: vector<u8>
+        assertion_id: u64
     }
 
     #[event]
     struct MarketResolvedEvent has drop, store {
-        market_id: vector<u8>
+        market_id: u64
     }
 
     #[event]
     struct TokensCreatedEvent has drop, store {
-        market_id: vector<u8>,
+        market_id: u64,
         account: address,
         tokens_created: u64
     }
 
     #[event]
     struct TokensRedeemedEvent has drop, store {
-        market_id: vector<u8>,
+        market_id: u64,
         account: address,
         tokens_redeemed: u64
     }
 
     #[event]
     struct TokensSettledEvent has drop, store {
-        market_id: vector<u8>,
+        market_id: u64,
         account: address,
         payout: u64,
         outcome_one_tokens: u64,
@@ -291,11 +293,13 @@ module optimistic_oracle_addr::prediction_market {
         // init AssertionRegistry struct
         move_to(oracle_signer, AssertionRegistry {
             assertion_to_asserter: smart_table::new(),
+            next_assertion_id: 0
         });
 
         // init MarketRegistry struct
         move_to(oracle_signer, MarketRegistry {
             market_to_creator: smart_table::new(),
+            next_market_id: 0
         });
 
         // init AssertedMarkets struct
@@ -372,10 +376,15 @@ module optimistic_oracle_addr::prediction_market {
         assert!(aptos_hash::keccak256(outcome_one) != aptos_hash::keccak256(outcome_two), ERROR_OUTCOMES_ARE_THE_SAME);
         assert!(vector::length(&description) > 0, ERROR_EMPTY_DESCRIPTION);
         
-        // set market id
         let current_timestamp = timestamp::now_microseconds();
         let time_bytes        = bcs::to_bytes<u64>(&current_timestamp);
-        let market_id         = get_market_id(creator_address, time_bytes, description);
+        
+        // set market id - original from UMA optimistic oracle
+        // let market_id         = get_market_id(creator_address, time_bytes, description);
+
+        // refactor to use numbers for market id for easier fetching on the frontend
+        let market_id                  = market_registry.next_market_id;
+        market_registry.next_market_id = market_registry.next_market_id + 1;
         
         // check that market does not already exist
         if (smart_table::contains(&markets.market_table, market_id)) {
@@ -384,15 +393,19 @@ module optimistic_oracle_addr::prediction_market {
 
         // Generate Outcome tokens
 
+        let market_id_bytes = bcs::to_bytes<u64>(&market_id);
+
         // For Outcome One Symbol
         let outcome_token_one_symbol = vector::empty<u8>();
         vector::append(&mut outcome_token_one_symbol, time_bytes);
         vector::append(&mut outcome_token_one_symbol, outcome_one);
+        vector::append(&mut outcome_token_one_symbol, market_id_bytes);
 
         // Outcome Two Symbol
         let outcome_token_two_symbol = vector::empty<u8>();
         vector::append(&mut outcome_token_two_symbol, time_bytes);
         vector::append(&mut outcome_token_two_symbol, outcome_two);
+        vector::append(&mut outcome_token_two_symbol, market_id_bytes);
         
         let outcome_token_one_constructor_ref = object::create_named_object(&oracle_signer, outcome_token_one_symbol);
         let outcome_token_two_constructor_ref = object::create_named_object(&oracle_signer, outcome_token_two_symbol);
@@ -504,7 +517,7 @@ module optimistic_oracle_addr::prediction_market {
     // Assert the market with any of 3 possible outcomes: names of outcome1, outcome2 or unresolvable.
     public entry fun assert_market(
         asserter: &signer,
-        market_id: vector<u8>, 
+        market_id: u64,
         asserted_outcome: vector<u8>
     ) acquires Markets, MarketRegistry, AssertedMarkets, AdminProperties, AssertionTable, AssertionRegistry {
 
@@ -584,7 +597,7 @@ module optimistic_oracle_addr::prediction_market {
         asserter: &signer,
         claim: vector<u8>,
         bond: u64,
-    ) : vector<u8> acquires AdminProperties, AssertionTable, AssertionRegistry {
+    ) : u64 acquires AdminProperties, AssertionTable, AssertionRegistry {
 
         let oracle_signer_addr  = get_oracle_signer_addr();
         let assertion_registry  = borrow_global_mut<AssertionRegistry>(oracle_signer_addr);
@@ -617,15 +630,19 @@ module optimistic_oracle_addr::prediction_market {
         let identifier = DEFAULT_IDENTIFIER;
         
         // set unique assertion id based on input
-        let current_timestamp = timestamp::now_microseconds();
-        let assertion_id = get_assertion_id(
-            asserter_addr,
-            claim, 
-            current_timestamp,
-            bond,
-            liveness,
-            identifier
-        );
+        // let current_timestamp = timestamp::now_microseconds();
+        // let assertion_id = get_assertion_id(
+        //     asserter_addr,
+        //     claim, 
+        //     current_timestamp,
+        //     bond,
+        //     liveness,
+        //     identifier
+        // );
+
+        // refactor assertion id to u64 for convenience to fetch on frontend
+        let assertion_id = assertion_registry.next_assertion_id;
+         assertion_registry.next_assertion_id =  assertion_registry.next_assertion_id + 1;
 
         // verify assertion does not exist - not needed anymore as we have ERROR_ASSERTION_ACTIVE_OR_RESOLVED
         // if (smart_table::contains(&assertions_table.assertions, assertion_id)) {
@@ -639,6 +656,7 @@ module optimistic_oracle_addr::prediction_market {
         // verify liveness is greater than minimum liveness - not needed anymore as default min liveness is used
         // assert!(liveness >= admin_properties.min_liveness, ERROR_MINIMUM_LIVENESS_NOT_REACHED);
 
+        let current_timestamp = timestamp::now_microseconds();
         let expiration_time = current_timestamp + liveness;
 
         // create assertion
@@ -688,7 +706,7 @@ module optimistic_oracle_addr::prediction_market {
      */
     public entry fun dispute_assertion(
         disputer : &signer,
-        assertion_id : vector<u8>,
+        assertion_id : u64,
     ) acquires AdminProperties, AssertionTable, AssertionRegistry {
 
         let oracle_signer_addr  = get_oracle_signer_addr();
@@ -743,7 +761,7 @@ module optimistic_oracle_addr::prediction_market {
      */
     public entry fun settle_assertion(
         settle_caller: &signer,
-        assertion_id: vector<u8>
+        assertion_id: u64
     ) acquires Markets, MarketRegistry, AssertedMarkets, AssertionTable, AssertionRegistry, OracleSigner, AdminProperties {
 
         let oracle_signer_addr = get_oracle_signer_addr();
@@ -869,7 +887,7 @@ module optimistic_oracle_addr::prediction_market {
     // scope of this contract. 
     public entry fun create_outcome_tokens(
         minter: &signer,
-        market_id: vector<u8>, 
+        market_id: u64, 
         tokens_to_create: u64
     ) acquires Markets, MarketRegistry, Management, AdminProperties {
 
@@ -926,7 +944,7 @@ module optimistic_oracle_addr::prediction_market {
     // Burns equal amount of outcome1 and outcome2 tokens returning settlement currency tokens.
     public entry fun redeem_outcome_tokens(
         redeemer: &signer,
-        market_id: vector<u8>, 
+        market_id: u64, 
         tokens_to_redeem: u64
     ) acquires Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
 
@@ -982,7 +1000,7 @@ module optimistic_oracle_addr::prediction_market {
     // as currency payout.
     public entry fun settle_outcome_tokens(
         settler: &signer,
-        market_id: vector<u8>
+        market_id: u64
     ) acquires Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
 
         let oracle_signer_addr     = get_oracle_signer_addr();
@@ -1067,32 +1085,34 @@ module optimistic_oracle_addr::prediction_market {
     }
 
     #[view]
-    public fun get_assertion_id(
-        asserter: address,
-        claim: vector<u8>, 
-        time: u64,
-        bond: u64, 
-        liveness: u64,
-        identifier: vector<u8>
-    ) : vector<u8> {
-
-        let asserter_bytes = bcs::to_bytes<address>(&asserter);
-        let time_bytes     = bcs::to_bytes<u64>(&time);
-        let bond_bytes     = bcs::to_bytes<u64>(&bond);
-        let liveness_bytes = bcs::to_bytes<u64>(&liveness);
+    public fun get_next_market_id(): (
+        u64
+    ) acquires MarketRegistry {
         
-        let assertion_id_vector = vector::empty<u8>();
-        vector::append(&mut assertion_id_vector, asserter_bytes);
-        vector::append(&mut assertion_id_vector, claim);
-        vector::append(&mut assertion_id_vector, time_bytes);
-        vector::append(&mut assertion_id_vector, bond_bytes);
-        vector::append(&mut assertion_id_vector, liveness_bytes);
-        vector::append(&mut assertion_id_vector, identifier);
-        aptos_hash::keccak256(assertion_id_vector)
+        let oracle_signer_addr = get_oracle_signer_addr();
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        
+        market_registry.next_market_id
     }
 
+
+
     #[view]
-    public fun get_assertion(assertion_id: vector<u8>) : (
+    public fun get_next_assertion_id(): (
+        u64
+    ) acquires AssertionRegistry {
+        
+        let oracle_signer_addr = get_oracle_signer_addr();
+        let assertion_registry = borrow_global<AssertionRegistry>(oracle_signer_addr);
+        
+        assertion_registry.next_assertion_id
+    }
+
+
+
+    #[view]
+    // refactored to use u64 as assertion id
+    public fun get_assertion(assertion_id: u64) : (
         address, bool, bool, u64, u64, u64, vector<u8>, u64, Option<address>
     ) acquires AssertionRegistry, AssertionTable {
 
@@ -1122,7 +1142,8 @@ module optimistic_oracle_addr::prediction_market {
 
 
     #[view]
-    public fun get_market(market_id: vector<u8>) : (
+    // refactored to use u64 as market id
+    public fun get_market(market_id: u64) : (
         address, bool, vector<u8>, u64, u64, vector<u8>, vector<u8>, vector<u8>, vector<u8>, Object<Metadata>, Object<Metadata>, address, address
     ) acquires MarketRegistry, Markets {
 
@@ -1157,30 +1178,58 @@ module optimistic_oracle_addr::prediction_market {
     }
 
 
-    #[view]
-    public fun get_market_id(
-        creator: address,
-        time_bytes: vector<u8>,
-        description: vector<u8>
-    ): vector<u8> {
-        let creator_bytes     = bcs::to_bytes<address>(&creator);
+    // #[view]
+    // public fun get_assertion_id(
+    //     asserter: address,
+    //     claim: vector<u8>, 
+    //     time: u64,
+    //     bond: u64, 
+    //     liveness: u64,
+    //     identifier: vector<u8>
+    // ) : vector<u8> {
 
-        let market_id_vector  = vector::empty<u8>();
-        vector::append(&mut market_id_vector, creator_bytes);
-        vector::append(&mut market_id_vector, time_bytes);
-        vector::append(&mut market_id_vector, description);
-        aptos_hash::keccak256(market_id_vector)
-    }
+    //     let asserter_bytes = bcs::to_bytes<address>(&asserter);
+    //     let time_bytes     = bcs::to_bytes<u64>(&time);
+    //     let bond_bytes     = bcs::to_bytes<u64>(&bond);
+    //     let liveness_bytes = bcs::to_bytes<u64>(&liveness);
+        
+    //     let assertion_id_vector = vector::empty<u8>();
+    //     vector::append(&mut assertion_id_vector, asserter_bytes);
+    //     vector::append(&mut assertion_id_vector, claim);
+    //     vector::append(&mut assertion_id_vector, time_bytes);
+    //     vector::append(&mut assertion_id_vector, bond_bytes);
+    //     vector::append(&mut assertion_id_vector, liveness_bytes);
+    //     vector::append(&mut assertion_id_vector, identifier);
+    //     aptos_hash::keccak256(assertion_id_vector)
+    // }
+
+
+    // original: refactor to use numbers for market id for easier fetching on the frontend
+    // #[view]
+    // public fun get_market_id(
+    //     creator: address,
+    //     time_bytes: vector<u8>,
+    //     description: vector<u8>
+    // ): vector<u8> {
+    //     let creator_bytes     = bcs::to_bytes<address>(&creator);
+
+    //     let market_id_vector  = vector::empty<u8>();
+    //     vector::append(&mut market_id_vector, creator_bytes);
+    //     vector::append(&mut market_id_vector, time_bytes);
+    //     vector::append(&mut market_id_vector, description);
+    //     aptos_hash::keccak256(market_id_vector)
+    // }
 
 
     // stamp assertion - i.e. ancillary data
     // Returns ancillary data for the Oracle request containing assertionId and asserter.
     // note: originally used as an inline function, however due to the test coverage bug we use a view instead to reach 100% test coverage
     #[view]
-    public fun stamp_assertion(assertion_id: vector<u8>, asserter: address) : vector<u8> {
+    public fun stamp_assertion(assertion_id: u64, asserter: address) : vector<u8> {
+        let assertion_id_bytes = bcs::to_bytes<u64>(&assertion_id);
         let ancillary_data_vector = vector::empty<u8>();
         vector::append(&mut ancillary_data_vector, b"assertionId: ");
-        vector::append(&mut ancillary_data_vector, assertion_id);
+        vector::append(&mut ancillary_data_vector, assertion_id_bytes);
         vector::append(&mut ancillary_data_vector, b",ooAsserter:");
         vector::append(&mut ancillary_data_vector, bcs::to_bytes<address>(&asserter));
         aptos_hash::keccak256(ancillary_data_vector)
@@ -1253,7 +1302,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     #[test_only]
     public fun test_AssertionMadeEvent(
-        assertion_id: vector<u8>, 
+        assertion_id: u64, 
         claim: vector<u8>,
         identifier: vector<u8>,
         asserter: address,
@@ -1279,7 +1328,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     #[test_only]
     public fun test_AssertionDisputedEvent(
-        assertion_id: vector<u8>, 
+        assertion_id: u64, 
         disputer: address
     ): AssertionDisputedEvent {
         let event = AssertionDisputedEvent{
@@ -1293,7 +1342,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     #[test_only]
     public fun test_AssertionSettledEvent(
-        assertion_id: vector<u8>, 
+        assertion_id: u64, 
         bond_recipient: address,
         disputed: bool,
         settlement_resolution: bool,
@@ -1314,7 +1363,7 @@ module optimistic_oracle_addr::prediction_market {
     #[test_only]
     public fun test_MarketInitializedEvent(
         creator: address,
-        market_id: vector<u8>,
+        market_id: u64,
         outcome_one: vector<u8>,
         outcome_two: vector<u8>,
         description: vector<u8>,
@@ -1350,9 +1399,9 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     #[test_only]
     public fun test_MarketAssertedEvent(
-        market_id: vector<u8>, 
+        market_id: u64, 
         asserted_outcome: vector<u8>,
-        assertion_id: vector<u8>
+        assertion_id: u64
     ): MarketAssertedEvent {
         let event = MarketAssertedEvent{
             market_id,
@@ -1366,7 +1415,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     #[test_only]
     public fun test_MarketResolvedEvent(
-        market_id: vector<u8>
+        market_id: u64
     ): MarketResolvedEvent {
         let event = MarketResolvedEvent{
             market_id
@@ -1378,7 +1427,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     #[test_only]
     public fun test_TokensCreatedEvent(
-        market_id: vector<u8>, 
+        market_id: u64, 
         account: address,
         tokens_created: u64
     ): TokensCreatedEvent {
@@ -1393,7 +1442,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     #[test_only]
     public fun test_TokensRedeemedEvent(
-        market_id: vector<u8>, 
+        market_id: u64, 
         account: address,
         tokens_redeemed: u64
     ): TokensRedeemedEvent {
@@ -1408,7 +1457,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     #[test_only]
     public fun test_TokensSettledEvent(
-        market_id: vector<u8>, 
+        market_id: u64, 
         account: address,
         payout: u64,
         outcome_one_tokens: u64,
