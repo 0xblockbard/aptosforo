@@ -4,17 +4,17 @@ version = "1.0.0"
 authors = []
 
 [addresses]
-escalation_manager_addr = "0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d"
-optimistic_oracle_addr = '0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d'
-treasury_addr = '0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d'
-# optimistic_oracle_addr  = '_'
-# escalation_manager_addr = '_'
-# treasury_addr           = '_'
+# escalation_manager_addr = "0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d"
+# optimistic_oracle_addr = '0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d'
+# treasury_addr = '0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d'
+optimistic_oracle_addr  = '_'
+escalation_manager_addr = '_'
+treasury_addr           = '_'
 
-# [dev-addresses]
-# optimistic_oracle_addr  = '0x111'
-# escalation_manager_addr = '0x222'
-# treasury_addr           = '0x333'
+[dev-addresses]
+optimistic_oracle_addr  = '0x111'
+escalation_manager_addr = '0x222'
+treasury_addr           = '0x333'
 
 [dependencies]
 AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", rev = "mainnet", subdir = "aptos-move/framework/aptos-framework"}
