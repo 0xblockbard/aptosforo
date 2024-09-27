@@ -1,0 +1,22 @@
+[package]
+name = "aptosforo"
+version = "1.0.0"
+authors = []
+
+[addresses]
+# escalation_manager_addr = "0x80fc7c711b3eeef9dc4d46cf2682196478a7dc5c6efaa49af7a5bffdb91c657a"
+# optimistic_oracle_addr = '0x80fc7c711b3eeef9dc4d46cf2682196478a7dc5c6efaa49af7a5bffdb91c657a'
+# treasury_addr = '0x80fc7c711b3eeef9dc4d46cf2682196478a7dc5c6efaa49af7a5bffdb91c657a'
+optimistic_oracle_addr  = '_'
+escalation_manager_addr = '_'
+treasury_addr           = '_'
+
+[dev-addresses]
+optimistic_oracle_addr  = '0x111'
+escalation_manager_addr = '0x222'
+treasury_addr           = '0x333'
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", rev = "mainnet", subdir = "aptos-move/framework/aptos-framework"}
+
+[dev-dependencies]
