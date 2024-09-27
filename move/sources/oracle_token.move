@@ -203,6 +203,24 @@ module optimistic_oracle_addr::oracle_token {
         });
     }
 
+
+    // For testnet only - allow any beta-testers to mint tokens on their own
+    public entry fun public_mint(user: &signer, amount: u64) acquires Management {
+        
+        let management = borrow_global<Management>(metadata_address());
+        let assets = fungible_asset::mint(&management.mint_ref, amount);
+        let user_addr = signer::address_of(user);
+
+        fungible_asset::deposit_with_ref(&management.transfer_ref, primary_fungible_store::ensure_primary_store_exists(user_addr, metadata()), assets);
+
+        event::emit(Mint {
+            minter: user_addr,
+            to: user_addr,
+            amount,
+        });
+    }
+
+
     /// Burn assets from the specified account.
     public entry fun burn(admin: &signer, from: address, amount: u64) acquires Management, AdminInfo {
 
