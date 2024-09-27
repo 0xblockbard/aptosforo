@@ -50,6 +50,13 @@ module optimistic_oracle_addr::prediction_market_test {
     const ERROR_INVALID_ASSERTED_OUTCOME: u64               = 24;
     const ERROR_MARKET_HAS_BEEN_RESOLVED: u64               = 25;
     const ERROR_MARKET_HAS_NOT_BEEN_RESOLVED: u64           = 26;
+    const ERROR_POOL_ALREADY_INITIALIZED: u64               = 27;
+    const ERROR_POOL_NOT_INITIALIZED: u64                   = 28;
+    const ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED: u64      = 29;
+    const ERROR_INSUFFICIENT_LP_BALANCE: u64                = 30;
+    const ERROR_INVALID_OUTCOME: u64                        = 31;
+    const ERROR_INSUFFICIENT_OUTPUT_AMOUNT: u64             = 32;
+    const ERROR_INSUFFICIENT_POOL_OUTCOME_TOKENS: u64       = 33;
 
     // -----------------------------------
     // Constants
