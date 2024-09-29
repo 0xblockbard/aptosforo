@@ -1,6 +1,5 @@
 /*
 * Extension of optimistic oracle for prediction markets
-* There are no inheritances or callbacks on Move so we handle everything internally
 */
 
 module optimistic_oracle_addr::prediction_market {
@@ -171,8 +170,8 @@ module optimistic_oracle_addr::prediction_market {
         market_id: u64,
         initializer: address,
         
-        outcome_token_one_reserve: u128,      // amount of protocol tokens backing outcome token one 
-        outcome_token_two_reserve: u128,      // amount of protocol tokens backing outcome token two
+        outcome_token_one_reserve: u128,      // amount of protocol tokens backing outcome token one (on prod, could be USDC etc)
+        outcome_token_two_reserve: u128,      // amount of protocol tokens backing outcome token two (on prod, could be USDC etc)
                 
         lp_total_supply: u128,
         lp_token_metadata: Object<Metadata>,
@@ -558,7 +557,6 @@ module optimistic_oracle_addr::prediction_market {
         let oracle_signer_addr  = get_oracle_signer_addr();
         let asserted_markets    = borrow_global_mut<AssertedMarkets>(oracle_signer_addr);
         let admin_properties    = borrow_global<AdminProperties>(oracle_signer_addr);
-
         let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
 
         // get creator address from registry (and verify market id exists)
@@ -566,8 +564,7 @@ module optimistic_oracle_addr::prediction_market {
         
         // find market by id
         let markets             = borrow_global_mut<Markets>(creator_address);
-
-        let market = smart_table::borrow_mut(&mut markets.market_table, market_id);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
 
         let asserted_outcome_id = aptos_hash::keccak256(asserted_outcome);
 
@@ -653,7 +650,7 @@ module optimistic_oracle_addr::prediction_market {
         } else {
             // assertion is not blocked
             if(validate_asserters){
-                // require asserters to be whitelisted 
+                // if require asserters to be whitelisted 
                 let whitelistedBool     = escalation_manager::is_assert_allowed(signer::address_of(asserter));
                 assert!(whitelistedBool, ERROR_NOT_WHITELISTED_ASSERTER);
             };
@@ -662,7 +659,14 @@ module optimistic_oracle_addr::prediction_market {
         // set defaults
         let liveness   = DEFAULT_MIN_LIVENESS;
         let identifier = DEFAULT_IDENTIFIER;
+
+        // refactor assertion id to u64 for convenience to fetch on frontend
+        let assertion_id = assertion_registry.next_assertion_id;
+         assertion_registry.next_assertion_id =  assertion_registry.next_assertion_id + 1;
         
+        // note: some old mechanics from previous optimistic oracle implementation for reference
+        // --------------------------------------------------------------------
+        // - refactored to use next_assertion_id instead
         // set unique assertion id based on input
         // let current_timestamp = timestamp::now_microseconds();
         // let assertion_id = get_assertion_id(
@@ -673,10 +677,6 @@ module optimistic_oracle_addr::prediction_market {
         //     liveness,
         //     identifier
         // );
-
-        // refactor assertion id to u64 for convenience to fetch on frontend
-        let assertion_id = assertion_registry.next_assertion_id;
-         assertion_registry.next_assertion_id =  assertion_registry.next_assertion_id + 1;
 
         // verify assertion does not exist - not needed anymore as we have ERROR_ASSERTION_ACTIVE_OR_RESOLVED
         // if (smart_table::contains(&assertions_table.assertions, assertion_id)) {
@@ -757,7 +757,7 @@ module optimistic_oracle_addr::prediction_market {
 
         let (_, _, validate_disputers) = escalation_manager::get_assertion_policy();
 
-        // require dispute callers to be whitelisted 
+        // if require dispute callers to be whitelisted 
         if(validate_disputers){
             let whitelistedBool = escalation_manager::is_dispute_allowed(signer::address_of(disputer));
             assert!(whitelistedBool, ERROR_NOT_WHITELISTED_DISPUTER);

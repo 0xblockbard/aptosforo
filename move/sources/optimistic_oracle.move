@@ -1,3 +1,9 @@
+//
+// Reference of UMA's optimistic oracle adapted for use on Aptos
+// This is the foundation of the prediction market contract for handling truth assertions
+// By: 0xblockbard
+//
+
 module optimistic_oracle_addr::optimistic_oracle {
 
     use optimistic_oracle_addr::escalation_manager;
