@@ -6,22 +6,20 @@ module optimistic_oracle_addr::prediction_market {
 
     use optimistic_oracle_addr::escalation_manager;
 
-    use aptos_framework::object::{Self, Object, ExtendRef};
-    use aptos_framework::fungible_asset::{Self, MintRef, TransferRef, BurnRef, Metadata};
-
+    use std::bcs;
     use std::signer;
     use std::event;
     use std::vector;
-    
-    use std::string::{utf8};
-    use std::bcs;
-    use aptos_std::aptos_hash;
-
     use std::timestamp; 
+    use std::string::{utf8};
     use std::option::{Self, Option};
-
+    
+    use aptos_std::aptos_hash;
     use aptos_std::smart_table::{Self, SmartTable};
+
     use aptos_framework::primary_fungible_store;
+    use aptos_framework::object::{Self, Object, ExtendRef};
+    use aptos_framework::fungible_asset::{Self, MintRef, TransferRef, BurnRef, Metadata};
 
     // -----------------------------------
     // Seeds
@@ -86,7 +84,7 @@ module optimistic_oracle_addr::prediction_market {
     const DEFAULT_OUTCOME_TOKEN_WEBSITE: vector<u8>   = b"http://example.com";
 
     const DEFAULT_MIN_LIQUIDITY_REQUIRED: u128         = 100;
-    const FIXED_POINT_ACCURACY: u128                  = 1_000_000_000_000_000_000;  // 10^18 for fixed point arithmetic
+    const FIXED_POINT_ACCURACY: u128                   = 1_000_000_000_000_000_000;  // 10^18 for fixed point arithmetic
     
     // -----------------------------------
     // Structs
@@ -182,7 +180,6 @@ module optimistic_oracle_addr::prediction_market {
         pools: SmartTable<u64, LiquidityPool>, // market_id -> LiquidityPool
     }
 
-
     /// AdminProperties Struct 
     struct AdminProperties has key, store {
         default_fee: u64,
@@ -205,6 +202,10 @@ module optimistic_oracle_addr::prediction_market {
     // -----------------------------------
     // Events
     // -----------------------------------
+
+    // ------------------
+    // Assertion Events
+    // ------------------
 
     #[event]
     struct AssertionMadeEvent has drop, store {
@@ -233,6 +234,9 @@ module optimistic_oracle_addr::prediction_market {
         settle_caller: address
     }
 
+    // ------------------
+    // Market Events
+    // ------------------
 
     #[event]
     struct MarketInitializedEvent has drop, store {
@@ -264,18 +268,62 @@ module optimistic_oracle_addr::prediction_market {
         market_id: u64
     }
 
+    // ------------------
+    // Liquidity Pool Events
+    // ------------------
+
     #[event]
-    struct TokensCreatedEvent has drop, store {
+    struct PoolInitializedEvent has drop, store {
+        initializer: address,
         market_id: u64,
-        account: address,
-        tokens_created: u64
+        collateral_amount: u64
     }
 
     #[event]
-    struct TokensRedeemedEvent has drop, store {
+    struct DepositLiquidityEvent has drop, store {
+        user: address,
         market_id: u64,
-        account: address,
-        tokens_redeemed: u64
+        amount: u64,
+        lp_tokens_minted: u64
+    }
+
+    #[event]
+    struct WithdrawLiquidityEvent has drop, store {
+        user: address,
+        market_id: u64,
+        lp_token_amount: u64,
+        collateral_amount: u64
+    }
+
+    // ------------------
+    // Outcome Token Events
+    // ------------------
+
+    #[event]
+    struct BuyOutcomeTokensEvent has drop, store {
+        user: address,
+        market_id: u64,
+        outcome_token: vector<u8>,
+        collateral_amount: u64,     // currency token used 
+        outcome_token_amount: u64   // outcome tokens minted
+    }
+
+    #[event]
+    struct SellOutcomeTokensEvent has drop, store {
+        user: address,
+        market_id: u64,
+        outcome_token: vector<u8>,
+        collateral_amount: u64,     // currency token received
+        outcome_token_amount: u64   // outcome tokens burned (registered on pool)
+    }
+
+    #[event]
+    struct RedeemLpTokensEvent has drop, store {
+        user: address,
+        market_id: u64,
+        lp_amount_redeemed: u64,
+        outcome_token_one_amount: u64,
+        outcome_token_two_amount: u64,
     }
 
     #[event]
@@ -409,17 +457,9 @@ module optimistic_oracle_addr::prediction_market {
         let current_timestamp = timestamp::now_microseconds();
         let time_bytes        = bcs::to_bytes<u64>(&current_timestamp);
         
-        // set market id - original from UMA optimistic oracle
-        // let market_id         = get_market_id(creator_address, time_bytes, description);
-
         // refactor to use numbers for market id for easier fetching on the frontend
         let market_id                  = market_registry.next_market_id;
         market_registry.next_market_id = market_registry.next_market_id + 1;
-        
-        // check that market does not already exist
-        if (smart_table::contains(&markets.market_table, market_id)) {
-            abort ERROR_MARKET_ALREADY_EXISTS
-        };
 
         // Generate Outcome tokens
 
@@ -948,6 +988,7 @@ module optimistic_oracle_addr::prediction_market {
         // check that the pool has not been initialized already, update market info pool initializer
         assert!(market.pool_initialized == false, ERROR_POOL_ALREADY_INITIALIZED);
         market.pool_initializer = option::some(initializer_addr);
+        market.pool_initialized = true;
 
         // create LP Token
         let lp_token_symbol: vector<u8> = b"LP Token";
@@ -1003,10 +1044,17 @@ module optimistic_oracle_addr::prediction_market {
         let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
         primary_fungible_store::transfer(initializer, currency_metadata, oracle_signer_addr, (collateral_amount as u64));
 
-        // // Mint LP Token to initializer
+        // Mint LP Token to initializer
         let initializer_wallet = primary_fungible_store::ensure_primary_store_exists(initializer_addr, lp_token_metadata);
         let fa = fungible_asset::mint(&fungible_asset::generate_mint_ref(&lp_token_constructor_ref), (half_collateral_amount as u64));
         fungible_asset::deposit_with_ref(&fungible_asset::generate_transfer_ref(&lp_token_constructor_ref), initializer_wallet, fa);
+
+        // emit event for pool initialized
+        event::emit(PoolInitializedEvent {
+            initializer: initializer_addr,
+            market_id,
+            collateral_amount: (collateral_amount as u64)
+        });
 
     }
 
@@ -1040,8 +1088,8 @@ module optimistic_oracle_addr::prediction_market {
 
         // get lp token metadata
         let lp_token_metadata       = liquidity_pool.lp_token_metadata;
-        let lp_token_mint_ref       = &borrow_global<Management>(market.outcome_token_one_address).mint_ref;
-        let lp_token_transfer_ref   = &borrow_global<Management>(market.outcome_token_one_address).transfer_ref;
+        let lp_token_mint_ref       = &borrow_global<Management>(liquidity_pool.lp_token_address).mint_ref;
+        let lp_token_transfer_ref   = &borrow_global<Management>(liquidity_pool.lp_token_address).transfer_ref;
 
         // calculate lp tokens to mint
         let collateral_token_reserve = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
@@ -1065,6 +1113,14 @@ module optimistic_oracle_addr::prediction_market {
         let user_wallet = primary_fungible_store::ensure_primary_store_exists(user_addr, lp_token_metadata);
         let fa = fungible_asset::mint(lp_token_mint_ref, (lp_tokens_to_mint as u64));
         fungible_asset::deposit_with_ref(lp_token_transfer_ref, user_wallet, fa);
+
+        // emit event for deposit liquidity
+        event::emit(DepositLiquidityEvent {
+            user: user_addr,
+            market_id,
+            amount: (amount as u64),
+            lp_tokens_minted: (lp_tokens_to_mint as u64)
+        });
 
     }
 
@@ -1101,7 +1157,7 @@ module optimistic_oracle_addr::prediction_market {
         let lp_token_burn_ref   = &borrow_global<Management>(liquidity_pool.lp_token_address).burn_ref;
 
         // calculate proportion of LP and outcome tokens
-        let lp_proportion = ((lp_token_amount as u128) * FIXED_POINT_ACCURACY) / liquidity_pool.lp_total_supply;
+        let lp_proportion                     = ((lp_token_amount as u128) * FIXED_POINT_ACCURACY) / liquidity_pool.lp_total_supply;
         let outcome_token_one_withdraw_amount = (liquidity_pool.outcome_token_one_reserve * lp_proportion) / FIXED_POINT_ACCURACY;
         let outcome_token_two_withdraw_amount = (liquidity_pool.outcome_token_two_reserve * lp_proportion) / FIXED_POINT_ACCURACY;
 
@@ -1118,6 +1174,14 @@ module optimistic_oracle_addr::prediction_market {
         let collateral_amount = outcome_token_one_withdraw_amount + outcome_token_two_withdraw_amount;
         let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
         primary_fungible_store::transfer(&oracle_signer, currency_metadata, user_addr, (collateral_amount as u64));
+
+        // emit event for withdraw liquidity
+        event::emit(WithdrawLiquidityEvent {
+            user: user_addr,
+            market_id,
+            lp_token_amount,
+            collateral_amount: (collateral_amount as u64)
+        });
 
     }
 
@@ -1155,7 +1219,7 @@ module optimistic_oracle_addr::prediction_market {
         let total_pool_reserves = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
 
         // calculate amount less fees (liquidity provider incentives)
-        let amountLessFees = (amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
+        let amount_less_fees = (amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
 
         let (token_metadata, token_reserve, token_address) = 
         if(outcome_token == b"one"){
@@ -1165,7 +1229,7 @@ module optimistic_oracle_addr::prediction_market {
         };
 
         // calculate amount to mint
-        let token_amount_mint   = (((amountLessFees * token_reserve * FIXED_POINT_ACCURACY) / total_pool_reserves) / FIXED_POINT_ACCURACY);
+        let token_amount_mint   = (((amount_less_fees * token_reserve * FIXED_POINT_ACCURACY) / total_pool_reserves) / FIXED_POINT_ACCURACY);
 
         // Get the management resource for the outcome token
         let mint_ref     = &borrow_global<Management>(token_address).mint_ref;
@@ -1186,6 +1250,15 @@ module optimistic_oracle_addr::prediction_market {
         // transfer currency tokens (i.e. oracle tokens) from user to module
         let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
         primary_fungible_store::transfer(user, currency_metadata, oracle_signer_addr, (amount as u64));
+
+        // emit event for buy outcome tokens
+        event::emit(BuyOutcomeTokensEvent {
+            user: user_addr,
+            market_id,
+            outcome_token,
+            collateral_amount: (amount as u64),
+            outcome_token_amount: (token_amount_mint as u64)
+        });
 
     }
 
@@ -1224,7 +1297,7 @@ module optimistic_oracle_addr::prediction_market {
         let total_pool_reserves = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
 
         // calculate amount less fees (liquidity provider incentives)
-        let amountLessFees = (amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
+        let amount_less_fees = (amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
 
         let (token_metadata, token_reserve, token_address) = 
         if(outcome_token == b"one"){
@@ -1234,7 +1307,7 @@ module optimistic_oracle_addr::prediction_market {
         };
 
         // calculate amount of collateral token to transfer back 
-        let collateral_token_amount = (((amountLessFees * total_pool_reserves * FIXED_POINT_ACCURACY) / token_reserve) / FIXED_POINT_ACCURACY);
+        let collateral_token_amount = (((amount_less_fees * total_pool_reserves * FIXED_POINT_ACCURACY) / token_reserve) / FIXED_POINT_ACCURACY);
 
         // Get the burn ref for the outcome token
         let token_burn_ref = &borrow_global<Management>(token_address).burn_ref;
@@ -1253,6 +1326,15 @@ module optimistic_oracle_addr::prediction_market {
         // transfer currency tokens (i.e. oracle tokens) from module to user
         let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
         primary_fungible_store::transfer(&oracle_signer, currency_metadata, user_addr, (collateral_token_amount as u64));
+
+        // emit event for sell outcome tokens
+        event::emit(SellOutcomeTokensEvent {
+            user: user_addr,
+            market_id,
+            outcome_token,
+            collateral_amount: (collateral_token_amount as u64),
+            outcome_token_amount: (amount as u64) 
+        });
 
     }
 
@@ -1292,13 +1374,15 @@ module optimistic_oracle_addr::prediction_market {
         // get and burn lp token 
         let lp_token_metadata   = liquidity_pool.lp_token_metadata;
         let lp_token_burn_ref   = &borrow_global<Management>(liquidity_pool.lp_token_address).burn_ref;
-        let user_lp_fa = primary_fungible_store::withdraw(redeemer, lp_token_metadata, (amount as u64));
+        let user_lp_fa          = primary_fungible_store::withdraw(redeemer, lp_token_metadata, (amount as u64));
         fungible_asset::burn(lp_token_burn_ref, user_lp_fa);
 
-        // let total_pool_reserves   = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
-        let lp_proportion         = (amount * FIXED_POINT_ACCURACY) / liquidity_pool.lp_total_supply;
+        let lp_proportion                        = (amount * FIXED_POINT_ACCURACY) / liquidity_pool.lp_total_supply;
         let outcome_token_one_proportion_amount  = ((liquidity_pool.outcome_token_one_reserve * lp_proportion) / FIXED_POINT_ACCURACY);
         let outcome_token_two_proportion_amount  = ((liquidity_pool.outcome_token_two_reserve * lp_proportion) / FIXED_POINT_ACCURACY);
+
+        let outcome_token_one_amount = 0;
+        let outcome_token_two_amount = 0;
 
         // process redemption based on market state
         if(market.resolved == true){
@@ -1306,38 +1390,59 @@ module optimistic_oracle_addr::prediction_market {
             // only redeem the winning outcome token if market has been resolved
             if(market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_one)){
                 // outcome one wins - mint outcome token one to redeemer
+                outcome_token_one_amount = outcome_token_one_proportion_amount;
+
                 let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_one_metadata);
-                let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_proportion_amount as u64));
+                let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_amount as u64));
                 fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
+
             } else if (market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_two)){
                 // outcome two wins - mint outcome token two to redeemer
+                outcome_token_two_amount = outcome_token_two_proportion_amount;
+
                 let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_two_metadata);
-                let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_proportion_amount as u64));
+                let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_amount as u64));
                 fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
+                
             } else {
                 // unresolved - mint both
+                outcome_token_one_amount = outcome_token_one_proportion_amount;
+                outcome_token_two_amount = outcome_token_two_proportion_amount;
+
                 let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_one_metadata);
-                let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_proportion_amount as u64));
+                let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_amount as u64));
                 fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
 
                 let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_two_metadata);
-                let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_proportion_amount as u64));
+                let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_amount as u64));
                 fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
 
             };
 
         } else {
 
+            outcome_token_one_amount = outcome_token_one_proportion_amount;
+            outcome_token_two_amount = outcome_token_two_proportion_amount;
+
             // redeem for both outcome tokens if market has not been resolved yet
             let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_one_metadata);
-            let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_proportion_amount as u64));
+            let fa = fungible_asset::mint(token_one_mint_ref, (outcome_token_one_amount as u64));
             fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
 
             let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(redeemer_addr, token_two_metadata);
-            let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_proportion_amount as u64));
+            let fa = fungible_asset::mint(token_two_mint_ref, (outcome_token_two_amount as u64));
             fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
 
         };
+
+        // emit event for redeem LP tokens
+        event::emit(RedeemLpTokensEvent {
+            user: redeemer_addr,
+            market_id,
+            lp_amount_redeemed: (amount as u64),
+            outcome_token_one_amount: (outcome_token_one_amount as u64),
+            outcome_token_two_amount: (outcome_token_two_amount as u64) 
+        });
 
     }
 
@@ -1754,6 +1859,39 @@ module optimistic_oracle_addr::prediction_market {
     }
 
 
+    #[view]
+    public fun get_pool(market_id: u64) : (
+        u64, address, u128, u128, u128, Object<Metadata>, address
+    ) acquires MarketRegistry, Markets, LiquidityPools {
+
+        let oracle_signer_addr     = get_oracle_signer_addr();
+        
+        // get the market
+        let market_registry     = borrow_global<MarketRegistry>(oracle_signer_addr);
+        let creator_address     = *smart_table::borrow(&market_registry.market_to_creator, market_id);
+        let markets             = borrow_global_mut<Markets>(creator_address);
+        let market              = smart_table::borrow_mut(&mut markets.market_table, market_id);
+
+        // get the pool
+        let initializer_addr    = option::destroy_some(market.pool_initializer);
+        let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
+        let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
+
+        // return the necessary fields from the market
+        (
+            liquidity_pool.market_id,
+            liquidity_pool.initializer,
+
+            liquidity_pool.outcome_token_one_reserve,
+            liquidity_pool.outcome_token_two_reserve,
+
+            liquidity_pool.lp_total_supply,
+            liquidity_pool.lp_token_metadata,
+            liquidity_pool.lp_token_address
+        )
+    }
+
+
     // #[view]
     // public fun get_assertion_id(
     //     asserter: address,
@@ -2002,33 +2140,115 @@ module optimistic_oracle_addr::prediction_market {
 
     #[view]
     #[test_only]
-    public fun test_TokensCreatedEvent(
-        market_id: u64, 
-        account: address,
-        tokens_created: u64
-    ): TokensCreatedEvent {
-        let event = TokensCreatedEvent{
+    public fun test_PoolInitializedEvent(
+        initializer: address, 
+        market_id: u64,
+        collateral_amount: u64
+    ): PoolInitializedEvent {
+        let event = PoolInitializedEvent{
+            initializer,
             market_id,
-            account,
-            tokens_created
+            collateral_amount
         };
         return event
     }
 
+    
     #[view]
     #[test_only]
-    public fun test_TokensRedeemedEvent(
-        market_id: u64, 
-        account: address,
-        tokens_redeemed: u64
-    ): TokensRedeemedEvent {
-        let event = TokensRedeemedEvent{
+    public fun test_DepositLiquidityEvent(
+        user: address, 
+        market_id: u64,
+        amount: u64,
+        lp_tokens_minted: u64,
+    ): DepositLiquidityEvent {
+        let event = DepositLiquidityEvent{
+            user,
             market_id,
-            account,
-            tokens_redeemed
+            amount,
+            lp_tokens_minted
         };
         return event
     }
+
+
+    #[view]
+    #[test_only]
+    public fun test_WithdrawLiquidityEvent(
+        user: address, 
+        market_id: u64,
+        lp_token_amount: u64,
+        collateral_amount: u64,
+    ): WithdrawLiquidityEvent {
+        let event = WithdrawLiquidityEvent{
+            user,
+            market_id,
+            lp_token_amount,
+            collateral_amount
+        };
+        return event
+    }
+
+
+    #[view]
+    #[test_only]
+    public fun test_BuyOutcomeTokensEvent(
+        user: address, 
+        market_id: u64,
+        outcome_token: vector<u8>,
+        collateral_amount: u64,
+        outcome_token_amount: u64,
+    ): BuyOutcomeTokensEvent {
+        let event = BuyOutcomeTokensEvent{
+            user,
+            market_id,
+            outcome_token,
+            collateral_amount,
+            outcome_token_amount
+        };
+        return event
+    }
+
+
+    #[view]
+    #[test_only]
+    public fun test_SellOutcomeTokensEvent(
+        user: address, 
+        market_id: u64,
+        outcome_token: vector<u8>,
+        collateral_amount: u64,
+        outcome_token_amount: u64,
+    ): SellOutcomeTokensEvent {
+        let event = SellOutcomeTokensEvent{
+            user,
+            market_id,
+            outcome_token,
+            collateral_amount,
+            outcome_token_amount
+        };
+        return event
+    }
+
+
+    #[view]
+    #[test_only]
+    public fun test_RedeemLpTokensEvent(
+        user: address,
+        market_id: u64, 
+        lp_amount_redeemed: u64,
+        outcome_token_one_amount: u64,
+        outcome_token_two_amount: u64
+    ): RedeemLpTokensEvent {
+        let event = RedeemLpTokensEvent{
+            user,
+            market_id,
+            lp_amount_redeemed,
+            outcome_token_one_amount,
+            outcome_token_two_amount
+        };
+        return event
+    }
+
 
     #[view]
     #[test_only]

@@ -5,15 +5,16 @@
 
 module optimistic_oracle_addr::oracle_token {
 
-    use aptos_framework::object::{Self, Object, ExtendRef};
-    use aptos_framework::fungible_asset::{Self, MintRef, TransferRef, BurnRef, Metadata, FungibleAsset, FungibleStore };
-    use aptos_framework::primary_fungible_store;
-    use aptos_framework::dispatchable_fungible_asset;
-    use aptos_framework::function_info;
-    use std::signer;
     use std::event;
+    use std::signer;
     use std::option::{Self};
     use std::string::{Self, utf8};
+
+    use aptos_framework::function_info;
+    use aptos_framework::primary_fungible_store;
+    use aptos_framework::dispatchable_fungible_asset;
+    use aptos_framework::object::{Self, Object, ExtendRef};
+    use aptos_framework::fungible_asset::{Self, MintRef, TransferRef, BurnRef, Metadata, FungibleAsset, FungibleStore };
 
     // -----------------------------------
     // Seeds
@@ -336,5 +337,24 @@ module optimistic_oracle_addr::oracle_token {
         mint(&mod_account, destination_addr, 10);
         burn(&source, destination_addr, 5);
     }
+
+    #[test(source = @0xa11ce, destination = @0xb0b, mod_account = @optimistic_oracle_addr)]
+    public entry fun test_public_mint_anyone_can_mint(
+        source: signer,
+        destination: signer,
+        mod_account: signer
+    ) acquires Management {
+
+        let source_addr      = signer::address_of(&source);
+        let destination_addr = signer::address_of(&destination);
+        aptos_framework::account::create_account_for_test(source_addr);
+        aptos_framework::account::create_account_for_test(destination_addr);
+        aptos_framework::account::create_account_for_test(signer::address_of(&mod_account));
+
+        setup_test(&mod_account);
+
+        public_mint(&mod_account, 10);
+    }
+
 
 }

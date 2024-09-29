@@ -8,22 +8,19 @@ module optimistic_oracle_addr::optimistic_oracle {
 
     use optimistic_oracle_addr::escalation_manager;
 
-    use std::signer;
+    use std::bcs;
     use std::event;
     use std::vector;
-    
-    use std::bcs;
-    use aptos_std::aptos_hash;
-
+    use std::signer;
     use std::timestamp; 
     use std::option::{Self, Option};
 
+    use aptos_std::aptos_hash;
     use aptos_std::smart_table::{Self, SmartTable};
-    use aptos_framework::fungible_asset::{
-        Metadata
-    };
+    
     use aptos_framework::object::{Self, Object};
     use aptos_framework::primary_fungible_store;
+    use aptos_framework::fungible_asset::{Metadata};
 
     // -----------------------------------
     // Seeds

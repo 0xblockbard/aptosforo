@@ -5,19 +5,19 @@ module optimistic_oracle_addr::prediction_market_test {
     use optimistic_oracle_addr::prediction_market;
     use optimistic_oracle_addr::oracle_token;
 
-    use std::signer;
     use std::bcs;
+    use std::signer;
+    use std::vector;
     use std::option::{Self, Option};
 
-    use std::vector;
     use aptos_std::aptos_hash;
     use aptos_std::smart_table::{SmartTable};
 
+    use aptos_framework::timestamp;
+    use aptos_framework::primary_fungible_store;
+    use aptos_framework::event::{ was_event_emitted };
     use aptos_framework::object::{Self, Object, ExtendRef};
     use aptos_framework::fungible_asset::{MintRef, TransferRef, BurnRef, Metadata};
-    use aptos_framework::primary_fungible_store;
-    use aptos_framework::timestamp;
-    use aptos_framework::event::{ was_event_emitted };
 
     // -----------------------------------
     // Errors
@@ -68,6 +68,7 @@ module optimistic_oracle_addr::prediction_market_test {
     
     const DEFAULT_MIN_LIVENESS: u64                   = 7200; // 2 hours
     const DEFAULT_FEE: u64                            = 1000;
+    const DEFAULT_SWAP_FEE_PERCENT: u128              = 2;    // 0.02%
     const DEFAULT_BURNED_BOND_PERCENTAGE: u64         = 1000;
     const DEFAULT_TREASURY_ADDRESS: address           = @optimistic_oracle_addr;
     const DEFAULT_IDENTIFIER: vector<u8>              = b"YES/NO";        // Identifier used for all prediction markets.
@@ -75,6 +76,9 @@ module optimistic_oracle_addr::prediction_market_test {
 
     const DEFAULT_OUTCOME_TOKEN_ICON: vector<u8>      = b"http://example.com/favicon.ico";
     const DEFAULT_OUTCOME_TOKEN_WEBSITE: vector<u8>   = b"http://example.com";
+
+    const DEFAULT_MIN_LIQUIDITY_REQUIRED: u128         = 100;
+    const FIXED_POINT_ACCURACY: u128                   = 1_000_000_000_000_000_000;  // 10^18 for fixed point arithmetic
     
     // -----------------------------------
     // Structs
@@ -149,8 +153,20 @@ module optimistic_oracle_addr::prediction_market_test {
         assertion_to_asserter: SmartTable<vector<u8>, address>
     }
 
-    struct IdentifierTable has key, store {
-        identifiers: SmartTable<vector<u8>, bool>
+    struct LiquidityPool has key, store {
+        market_id: u64,
+        initializer: address,
+        
+        outcome_token_one_reserve: u128,      // amount of protocol tokens backing outcome token one (on prod, could be USDC etc)
+        outcome_token_two_reserve: u128,      // amount of protocol tokens backing outcome token two (on prod, could be USDC etc)
+                
+        lp_total_supply: u128,
+        lp_token_metadata: Object<Metadata>,
+        lp_token_address: address
+    }
+
+    struct LiquidityPools has key, store {
+        pools: SmartTable<u64, LiquidityPool>, // market_id -> LiquidityPool
     }
 
     /// AdminProperties Struct 
@@ -705,16 +721,11 @@ module optimistic_oracle_addr::prediction_market_test {
 
         // check that reward was transferred
         let updated_initializer_balance = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
-        assert!(updated_initializer_balance == initial_initializer_balance - reward, 99);
+        assert!(updated_initializer_balance == initial_initializer_balance - reward, 100);
 
         // ----------------------------------
         // Assert Market
         // ----------------------------------
-
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -745,22 +756,8 @@ module optimistic_oracle_addr::prediction_market_test {
         // Get assertion id and market info
         // ----------------------------------
 
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
         // get the assertion id
-        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
-        // let identifier   = DEFAULT_IDENTIFIER;
-
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     user_two_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
 
         // get market view
         let (
@@ -780,43 +777,188 @@ module optimistic_oracle_addr::prediction_market_test {
         ) = prediction_market::get_market(market_id);
 
         // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity            = (100_000 as u128);
+        let initial_oracle_token_balance = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
+
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+        let updated_oracle_token_balance = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
+
+        // check that oracle token was sent by user to be used as collateral
+        assert!(updated_oracle_token_balance == initial_oracle_token_balance - (initial_liquidity as u64), 101);
+
+        // create instance of expected event
+        let pool_initialized_event = prediction_market::test_PoolInitializedEvent(
+            user_one_addr,
+            market_id,
+            (initial_liquidity as u64)
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&pool_initialized_event), 102);
+
+        let (
+            view_market_id,
+            view_initializer,
+            outcome_token_one_reserve,
+            outcome_token_two_reserve,
+            lp_total_supply,
+            _lp_token_metadata,
+            _lp_token_address
+        ) = prediction_market::get_pool(market_id);
+
+        assert!(view_market_id              == market_id             , 103);
+        assert!(view_initializer            == user_one_addr         , 104);
+        assert!(outcome_token_one_reserve   == initial_liquidity / 2 , 105);
+        assert!(outcome_token_two_reserve   == initial_liquidity / 2 , 106);
+        assert!(lp_total_supply             == initial_liquidity / 2 , 107);
+        
+        // ----------------------------------
         // Outcome Tokens interactions test
         // ----------------------------------
 
-        // create some outcome tokens for user one and two 
-        let tokens_to_create = 1000;
-        prediction_market::create_outcome_tokens(user_one, market_id, tokens_to_create);
-        prediction_market::create_outcome_tokens(user_two, market_id, tokens_to_create);
-        // both users should now have 1000 outcome one and two tokens
+        // buy some outcome tokens for user one 
+        let buy_amount      = 1000;
+        let outcome_token   = b"one";
+
+        // calc outcome token amount received
+        let token_reserve     = initial_liquidity / 2;
+        let amount_less_fees  = (buy_amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
+        let token_amount_mint = (((amount_less_fees * token_reserve * FIXED_POINT_ACCURACY) / initial_liquidity) / FIXED_POINT_ACCURACY);
+
+        prediction_market::buy_outcome_tokens(user_one, market_id, outcome_token, buy_amount);
+        // user one should receive [token_amount_mint] amount of outcome one tokens
 
         // create instance of expected event
-        let tokens_created_event = prediction_market::test_TokensCreatedEvent(
-            market_id,
+        let buy_outcome_tokens_event = prediction_market::test_BuyOutcomeTokensEvent(
             user_one_addr,
-            tokens_to_create
+            market_id,
+            outcome_token,
+            (buy_amount as u64),
+            (token_amount_mint as u64)
         );
 
         // verify if expected event was emitted
-        assert!(was_event_emitted(&tokens_created_event), 99);
+        assert!(was_event_emitted(&buy_outcome_tokens_event), 108);
 
-        // user one can redeem some outcome tokens 
-        let tokens_to_redeem = 200;
-        prediction_market::redeem_outcome_tokens(user_one, market_id, tokens_to_redeem);
-        // user one should now have 800 outcome one and two tokens
+        // buy some outcome tokens for user two
+        let user_two_outcome_token = b"two";
+        prediction_market::buy_outcome_tokens(user_two, market_id, user_two_outcome_token, buy_amount);
+
+        // get pool info 
+        let (
+            _,
+            _,
+            outcome_token_one_reserve,
+            outcome_token_two_reserve,
+            _lp_total_supply,
+            _,
+            _
+        ) = prediction_market::get_pool(market_id);
+
+        // calc collateral token received after selling some outcome tokens
+        let tokens_to_sell          = 100;
+        let total_pool_reserves     = outcome_token_one_reserve + outcome_token_two_reserve;
+        token_reserve               = outcome_token_one_reserve;
+        amount_less_fees            = (tokens_to_sell * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
+        let collateral_token_amount = (((amount_less_fees * total_pool_reserves * FIXED_POINT_ACCURACY) / token_reserve) / FIXED_POINT_ACCURACY);
+
+        // user one can sell some outcome one tokens 
+        prediction_market::sell_outcome_tokens(user_one, market_id, outcome_token, tokens_to_sell);
 
         // create instance of expected event
-        let tokens_redeemed_event = prediction_market::test_TokensRedeemedEvent(
-            market_id,
+        let sell_outcome_tokens_event = prediction_market::test_SellOutcomeTokensEvent(
             user_one_addr,
-            tokens_to_redeem
+            market_id,
+            outcome_token,
+            (collateral_token_amount as u64),
+            (tokens_to_sell as u64)
         );
 
         // verify if expected event was emitted
-        assert!(was_event_emitted(&tokens_redeemed_event), 99);
+        assert!(was_event_emitted(&sell_outcome_tokens_event), 109);
 
-        // transfer 500 outcome token one from user two to one
-        let transfer_amount = 500;
-        primary_fungible_store::transfer(user_two, outcome_token_one_metadata, user_one_addr, transfer_amount);
+        // user two can sell some outcome two tokens 
+        prediction_market::sell_outcome_tokens(user_two, market_id, user_two_outcome_token, tokens_to_sell);
+
+        // user two can deposit liquidity 
+        let deposit_amount = 1000;
+
+        // get updated token reserves
+        let (
+            _,
+            _,
+            outcome_token_one_reserve,
+            outcome_token_two_reserve,
+            lp_total_supply,
+            _,
+            _
+        ) = prediction_market::get_pool(market_id);
+
+        total_pool_reserves     = outcome_token_one_reserve + outcome_token_two_reserve;
+        let lp_tokens_to_mint   = (((deposit_amount * lp_total_supply * FIXED_POINT_ACCURACY)) / total_pool_reserves) / FIXED_POINT_ACCURACY;
+
+        prediction_market::deposit_liquidity(user_two, market_id, deposit_amount);
+        
+        // create instance of expected event
+        let sell_outcome_tokens_event = prediction_market::test_DepositLiquidityEvent(
+            user_two_addr,
+            market_id,
+            (deposit_amount as u64),
+            (lp_tokens_to_mint as u64)
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&sell_outcome_tokens_event), 110);
+
+        // user two can redeem some LP for outcome tokens
+        let lp_token_redeem_amount = 200;
+
+        // get updated token reserves
+        let (
+            _,
+            _,
+            outcome_token_one_reserve,
+            outcome_token_two_reserve,
+            lp_total_supply,
+            lp_token_metadata,
+            _
+        ) = prediction_market::get_pool(market_id);
+
+        // calc outcome token amounts to be redeemed based on LP amount
+        let lp_proportion                   = (lp_token_redeem_amount * FIXED_POINT_ACCURACY) / lp_total_supply;
+        let redeem_outcome_token_one_amount = ((outcome_token_one_reserve * lp_proportion) / FIXED_POINT_ACCURACY);
+        let redeem_outcome_token_two_amount = ((outcome_token_two_reserve * lp_proportion) / FIXED_POINT_ACCURACY);
+
+        let initial_user_two_lp_token_balance          = primary_fungible_store::balance(user_two_addr, lp_token_metadata);
+        let initial_user_two_outcome_token_one_balance = primary_fungible_store::balance(user_two_addr, outcome_token_one_metadata);
+        let initial_user_two_outcome_token_two_balance = primary_fungible_store::balance(user_two_addr, outcome_token_two_metadata);
+
+        prediction_market::redeem_lp_for_outcome_tokens(user_two, market_id, lp_token_redeem_amount);
+
+        let updated_user_two_lp_token_balance          = primary_fungible_store::balance(user_two_addr, lp_token_metadata);
+        let updated_user_two_outcome_token_one_balance = primary_fungible_store::balance(user_two_addr, outcome_token_one_metadata);
+        let updated_user_two_outcome_token_two_balance = primary_fungible_store::balance(user_two_addr, outcome_token_two_metadata);
+
+        // check correct outcome token amounts redeemed, and LP tokens burnt
+        assert!(updated_user_two_outcome_token_one_balance == initial_user_two_outcome_token_one_balance + (redeem_outcome_token_one_amount as u64) , 111);
+        assert!(updated_user_two_outcome_token_two_balance == initial_user_two_outcome_token_two_balance + (redeem_outcome_token_two_amount as u64) , 112);
+        assert!(updated_user_two_lp_token_balance          == initial_user_two_lp_token_balance - (lp_token_redeem_amount as u64)                   , 113);
+
+        // create instance of expected event
+        let redeem_lp_tokens_event = prediction_market::test_RedeemLpTokensEvent(
+            user_two_addr,
+            market_id,
+            (lp_token_redeem_amount as u64),
+            (redeem_outcome_token_one_amount as u64),
+            (redeem_outcome_token_two_amount as u64)
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&redeem_lp_tokens_event), 114);
 
         // ----------------------------------
         // Settle Assertion
@@ -838,7 +980,7 @@ module optimistic_oracle_addr::prediction_market_test {
         let updated_asserter_balance = primary_fungible_store::balance(user_two_addr, oracle_token_metadata);
 
         // asserter should have his bond returned + reward
-        assert!(updated_asserter_balance == initial_asserter_balance + bond + reward, 101);
+        assert!(updated_asserter_balance == initial_asserter_balance + bond + reward, 115);
 
         // get views to confirm assertion has been resolved
         let (
@@ -853,8 +995,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _disputer
         ) = prediction_market::get_assertion(assertion_id);
 
-        assert!(settled                 == true, 102);
-        assert!(settlement_resolution   == true, 103);
+        assert!(settled                 == true, 116);
+        assert!(settlement_resolution   == true, 117);
 
         // create instance of expected event
         let assertion_settled_event = prediction_market::test_AssertionSettledEvent(
@@ -866,7 +1008,7 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // verify if expected event was emitted
-        assert!(was_event_emitted(&assertion_settled_event), 104);
+        assert!(was_event_emitted(&assertion_settled_event), 118);
 
         // ----------------------------------
         // Settle Outcome Tokens
@@ -883,18 +1025,59 @@ module optimistic_oracle_addr::prediction_market_test {
         let initial_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
         let initial_user_two_outcome_token_two_balance = primary_fungible_store::balance(user_two_addr, outcome_token_two_metadata);
 
-        // user one should now have 1300 outcome one tokens and 800 outcome two tokens 
-        // user two should now have 500 outcome one tokens and 1000 outcome two tokens
-        // as market was resolved to the first outcome, payout equals total balance of outcome one tokens
+        // get updated liquidity pool token reserves
+        let (
+            _,
+            _,
+            outcome_token_one_reserve,
+            outcome_token_two_reserve,
+            _lp_total_supply,
+            _lp_token_metadata,
+            _
+        ) = prediction_market::get_pool(market_id);
 
+        // calc user one proportion 
+        total_pool_reserves     = outcome_token_one_reserve + outcome_token_two_reserve;
+        let user_one_proportion = (((initial_user_one_outcome_token_one_balance as u128) * FIXED_POINT_ACCURACY) / outcome_token_one_reserve);
+        let user_one_payout     = (user_one_proportion * total_pool_reserves) / FIXED_POINT_ACCURACY;
+
+        let user_two_proportion = (((initial_user_two_outcome_token_one_balance as u128) * FIXED_POINT_ACCURACY) / outcome_token_one_reserve);
+        let user_two_payout     = (user_two_proportion * total_pool_reserves) / FIXED_POINT_ACCURACY;
+
+        // settle outcome tokens
+        // as market was resolved to the first outcome, payout is based on outcome token one proportions
         prediction_market::settle_outcome_tokens(user_one, market_id);
         prediction_market::settle_outcome_tokens(user_two, market_id);
         
         let updated_user_one_balance = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
         let updated_user_two_balance = primary_fungible_store::balance(user_two_addr, oracle_token_metadata);
 
-        assert!(updated_user_one_balance == initial_user_one_balance + initial_user_one_outcome_token_one_balance  , 105);
-        assert!(updated_user_two_balance == initial_user_two_balance + initial_user_two_outcome_token_one_balance , 106);
+        assert!(updated_user_one_balance == initial_user_one_balance + (user_one_payout as u64) , 119);
+        assert!(updated_user_two_balance == initial_user_two_balance + (user_two_payout as u64) , 120);
+
+        // create instance of expected event for user one tokens settled event
+        let tokens_settled_event = prediction_market::test_TokensSettledEvent(
+            market_id,
+            user_one_addr,
+            (user_one_payout as u64),
+            (initial_user_one_outcome_token_one_balance as u64),
+            (initial_user_one_outcome_token_two_balance as u64)
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&tokens_settled_event), 121);
+
+        // create instance of expected event for user two tokens settled event
+        let tokens_settled_event = prediction_market::test_TokensSettledEvent(
+            market_id,
+            user_two_addr,
+            (user_two_payout as u64),
+            (initial_user_two_outcome_token_one_balance as u64),
+            (initial_user_two_outcome_token_two_balance as u64)
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&tokens_settled_event), 122);
 
         // updated outcome token one balance
         let updated_user_one_outcome_token_one_balance = primary_fungible_store::balance(user_one_addr, outcome_token_one_metadata);
@@ -904,35 +1087,16 @@ module optimistic_oracle_addr::prediction_market_test {
         let updated_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
         let updated_user_two_outcome_token_two_balance = primary_fungible_store::balance(user_two_addr, outcome_token_two_metadata);
 
-        // create instance of expected event for user one tokens settled event
-        let tokens_settled_event = prediction_market::test_TokensSettledEvent(
-            market_id,
-            user_one_addr,
-            initial_user_one_outcome_token_one_balance,
-            initial_user_one_outcome_token_one_balance,
-            initial_user_one_outcome_token_two_balance
-        );
-
-        // verify if expected event was emitted
-        assert!(was_event_emitted(&tokens_settled_event), 107);
-
-        // create instance of expected event for user two tokens settled event
-        let tokens_settled_event = prediction_market::test_TokensSettledEvent(
-            market_id,
-            user_two_addr,
-            initial_user_two_outcome_token_one_balance,
-            initial_user_two_outcome_token_one_balance,
-            initial_user_two_outcome_token_two_balance
-        );
-
-        // verify if expected event was emitted
-        assert!(was_event_emitted(&tokens_settled_event), 108);
-
         // check all outcome token balances are now zero after settling
-        assert!(updated_user_one_outcome_token_one_balance == 0, 109);
-        assert!(updated_user_one_outcome_token_two_balance == 0, 110);
-        assert!(updated_user_two_outcome_token_one_balance == 0, 111);
-        assert!(updated_user_two_outcome_token_two_balance == 0, 112);
+        assert!(updated_user_one_outcome_token_one_balance == 0, 123);
+        assert!(updated_user_one_outcome_token_two_balance == 0, 124);
+        assert!(updated_user_two_outcome_token_one_balance == 0, 125);
+        assert!(updated_user_two_outcome_token_two_balance == 0, 126);
+
+        // user can still redeem lp tokens for outcome tokens and settle them
+        lp_token_redeem_amount = 100;
+        prediction_market::redeem_lp_for_outcome_tokens(user_two, market_id, lp_token_redeem_amount);
+        prediction_market::settle_outcome_tokens(user_two, market_id);
 
     }
 
@@ -1025,11 +1189,6 @@ module optimistic_oracle_addr::prediction_market_test {
         // Assert Market
         // ----------------------------------
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome = outcome_two; // we assert outcome two is correct now
 
@@ -1083,33 +1242,31 @@ module optimistic_oracle_addr::prediction_market_test {
         assert!(asserter_balance == mint_amount - bond, 101);
 
         // ----------------------------------
-        // Get assertion id 
+        // Set defaults
         // ----------------------------------
 
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
         let identifier   = DEFAULT_IDENTIFIER;
 
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     asserter_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
 
         // ----------------------------------
         // Outcome Tokens interactions test
         // ----------------------------------
 
-        // create some outcome tokens for user one
-        let tokens_to_create = 1000;
-        prediction_market::create_outcome_tokens(user_one, market_id, tokens_to_create);
+        // let user two deposit some liquidity
+        let deposit_amount = 10_000;
+        prediction_market::deposit_liquidity(user_two, market_id, deposit_amount);
+
+        // redeem some LP tokens for outcome tokens for user one and two
+        let lp_token_redeem_amount = 1000;
+        prediction_market::redeem_lp_for_outcome_tokens(user_one, market_id, lp_token_redeem_amount);
+        prediction_market::redeem_lp_for_outcome_tokens(user_two, market_id, lp_token_redeem_amount);
 
         // ----------------------------------
         // Dispute Assertion
@@ -1244,7 +1401,7 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
-            _outcome_token_one_metadata,
+            outcome_token_one_metadata,
             outcome_token_two_metadata,
             _outcome_token_one_address,
             _outcome_token_two_address
@@ -1258,15 +1415,51 @@ module optimistic_oracle_addr::prediction_market_test {
         // Settle Outcome Tokens
         // ----------------------------------
 
+        // get updated liquidity pool token reserves
+        let (
+            _,
+            _,
+            outcome_token_one_reserve,
+            outcome_token_two_reserve,
+            _lp_total_supply,
+            _lp_token_metadata,
+            _
+        ) = prediction_market::get_pool(market_id);
+        
         let initial_user_one_balance                   = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
         let initial_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
+
+        // calc user one proportion 
+        let total_pool_reserves = outcome_token_one_reserve + outcome_token_two_reserve;
+        let user_one_proportion = (((initial_user_one_outcome_token_two_balance as u128) * FIXED_POINT_ACCURACY) / outcome_token_two_reserve);
+        let user_one_payout     = (user_one_proportion * total_pool_reserves) / FIXED_POINT_ACCURACY;
 
         prediction_market::settle_outcome_tokens(user_one, market_id);
 
         let updated_user_one_balance                   = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
 
         // increase by outcome token two balance
-        assert!(updated_user_one_balance == initial_user_one_balance + initial_user_one_outcome_token_two_balance  , 105);
+        assert!(updated_user_one_balance == initial_user_one_balance + (user_one_payout as u64)  , 105);
+
+        // ----------------------------------
+        // Test redeem LP Tokens for Outcome tokens
+        // ----------------------------------
+
+        // user can only redeem LP tokens for outcome two tokens now
+        let lp_token_redeem_amount = 1000;
+        
+        // initial outcome token one balance
+        let initial_user_one_outcome_token_one_balance = primary_fungible_store::balance(user_one_addr, outcome_token_one_metadata);
+        let initial_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
+
+        prediction_market::redeem_lp_for_outcome_tokens(user_one, market_id, lp_token_redeem_amount);
+
+        // updated outcome token one balance
+        let updated_user_one_outcome_token_one_balance = primary_fungible_store::balance(user_one_addr, outcome_token_one_metadata);
+        let updated_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
+
+        assert!(updated_user_one_outcome_token_one_balance == initial_user_one_outcome_token_one_balance , 113);
+        assert!(updated_user_one_outcome_token_two_balance > initial_user_one_outcome_token_two_balance  , 114);
 
     }
 
@@ -1355,11 +1548,6 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome = outcome_two; // we assert outcome two is correct now
 
@@ -1417,33 +1605,31 @@ module optimistic_oracle_addr::prediction_market_test {
         assert!(asserter_balance == mint_amount - bond, 101);
 
         // ----------------------------------
-        // Get assertion id 
+        // Set defaults
         // ----------------------------------
 
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
         let identifier   = DEFAULT_IDENTIFIER;
 
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     asserter_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
-        
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
         // ----------------------------------
         // Outcome Tokens interactions test
         // ----------------------------------
+        
+        // let user two deposit some liquidity
+        let deposit_amount = 10_000;
+        prediction_market::deposit_liquidity(user_two, market_id, deposit_amount);
 
-        // create some outcome tokens for user one
-        let tokens_to_create = 1000;
-        prediction_market::create_outcome_tokens(user_one, market_id, tokens_to_create);
+        // redeem some LP tokens for outcome tokens for user one and two
+        let lp_token_redeem_amount = 1000;
+        prediction_market::redeem_lp_for_outcome_tokens(user_one, market_id, lp_token_redeem_amount);
+        prediction_market::redeem_lp_for_outcome_tokens(user_two, market_id, lp_token_redeem_amount);
 
         // ----------------------------------
         // Dispute Assertion
@@ -1680,11 +1866,6 @@ module optimistic_oracle_addr::prediction_market_test {
         // Assert Market
         // ----------------------------------
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome    = UNRESOLVABLE; // we assert outcome is unresolvable
 
@@ -1697,6 +1878,24 @@ module optimistic_oracle_addr::prediction_market_test {
             market_id,
             asserted_outcome
         );
+
+        // get market view
+        let (
+            _creator,
+            _resolved,
+            view_asserted_outcome_id,
+            _reward,
+            _required_bond,
+            _view_outcome_one,
+            _view_outcome_two,
+            _view_description,
+            _view_image_url,
+            outcome_token_one_metadata,
+            outcome_token_two_metadata,
+            _outcome_token_one_address,
+            _outcome_token_two_address
+        ) = prediction_market::get_market(market_id);
+        assert!(view_asserted_outcome_id == aptos_hash::keccak256(asserted_outcome), 100);
 
         let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
         let bond;
@@ -1711,81 +1910,30 @@ module optimistic_oracle_addr::prediction_market_test {
         assert!(asserter_balance == mint_amount - bond, 100);
 
         // ----------------------------------
-        // Get assertion id and market info
+        // Set defaults
         // ----------------------------------
 
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
-        // let identifier   = DEFAULT_IDENTIFIER;
 
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     user_two_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
 
-        // get market view
-        let (
-            _creator,
-            _resolved,
-            _asserted_outcome_id,
-            _reward,
-            _required_bond,
-            _view_outcome_one,
-            _view_outcome_two,
-            _view_description,
-            _view_image_url,
-            outcome_token_one_metadata,
-            outcome_token_two_metadata,
-            _outcome_token_one_address,
-            _outcome_token_two_address
-        ) = prediction_market::get_market(market_id);
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
 
         // ----------------------------------
         // Outcome Tokens interactions test
         // ----------------------------------
 
-        // create some outcome tokens for user one and two 
-        let tokens_to_create = 1000;
-        prediction_market::create_outcome_tokens(user_one, market_id, tokens_to_create);
-        prediction_market::create_outcome_tokens(user_two, market_id, tokens_to_create);
-        // both users should now have 1000 outcome one and two tokens
+        // let user two deposit some liquidity
+        let deposit_amount = 10_000;
+        prediction_market::deposit_liquidity(user_two, market_id, deposit_amount);
 
-        // create instance of expected event
-        let tokens_created_event = prediction_market::test_TokensCreatedEvent(
-            market_id,
-            user_one_addr,
-            tokens_to_create
-        );
-
-        // verify if expected event was emitted
-        assert!(was_event_emitted(&tokens_created_event), 99);
-
-        // user one can redeem some outcome tokens 
-        let tokens_to_redeem = 200;
-        prediction_market::redeem_outcome_tokens(user_one, market_id, tokens_to_redeem);
-        // user one should now have 800 outcome one and two tokens
-
-        // create instance of expected event
-        let tokens_redeemed_event = prediction_market::test_TokensRedeemedEvent(
-            market_id,
-            user_one_addr,
-            tokens_to_redeem
-        );
-
-        // verify if expected event was emitted
-        assert!(was_event_emitted(&tokens_redeemed_event), 99);
-
-        // transfer 500 outcome token one from user two to one
-        let transfer_amount = 500;
-        primary_fungible_store::transfer(user_two, outcome_token_one_metadata, user_one_addr, transfer_amount);
+        // redeem some LP tokens for outcome tokens for user one and two
+        let lp_token_redeem_amount = 1000;
+        prediction_market::redeem_lp_for_outcome_tokens(user_one, market_id, lp_token_redeem_amount);
+        prediction_market::redeem_lp_for_outcome_tokens(user_two, market_id, lp_token_redeem_amount);
 
         // ----------------------------------
         // Settle Assertion
@@ -1841,6 +1989,13 @@ module optimistic_oracle_addr::prediction_market_test {
         // Settle Outcome Tokens
         // ----------------------------------
 
+        // unresolved outcome so $1 => one outcome token one + one outcome token two 
+
+        // transfer 500 outcome token one from user two to one
+        // to test different burn amounts for unresolved outcome
+        let transfer_amount = 500;
+        primary_fungible_store::transfer(user_two, outcome_token_one_metadata, user_one_addr, transfer_amount);
+
         let initial_user_one_balance = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
         let initial_user_two_balance = primary_fungible_store::balance(user_two_addr, oracle_token_metadata);
 
@@ -1851,19 +2006,68 @@ module optimistic_oracle_addr::prediction_market_test {
         // initial outcome token two balance
         let initial_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
         let initial_user_two_outcome_token_two_balance = primary_fungible_store::balance(user_two_addr, outcome_token_two_metadata);
+        
+        // calc user payouts
+        let _user_one_payout                = 0;
+        let _user_one_token_one_burn_amount = 0;
+        let _user_one_token_two_burn_amount = 0;
+        if(initial_user_one_outcome_token_one_balance > initial_user_one_outcome_token_two_balance){
+            _user_one_payout                = initial_user_one_outcome_token_two_balance * 2;
+            _user_one_token_one_burn_amount = initial_user_one_outcome_token_two_balance;
+            _user_one_token_two_burn_amount = initial_user_one_outcome_token_two_balance;
+        } else {
+            _user_one_payout                = initial_user_one_outcome_token_one_balance * 2;
+            _user_one_token_one_burn_amount = initial_user_one_outcome_token_one_balance;
+            _user_one_token_two_burn_amount = initial_user_one_outcome_token_one_balance;
+        };
 
-        // user one should now have 1300 outcome one tokens and 800 outcome two tokens 
-        // user two should now have 500 outcome one tokens and 1000 outcome two tokens
-        // as market was resolved to be unresolvable, payout equals half of outcome one and two tokens combined
+        let _user_two_payout                = 0;
+        let _user_two_token_one_burn_amount = 0;
+        let _user_two_token_two_burn_amount = 0;
+        if(initial_user_two_outcome_token_one_balance > initial_user_two_outcome_token_two_balance){
+            _user_two_payout                = initial_user_two_outcome_token_two_balance * 2;
+            _user_two_token_one_burn_amount = initial_user_two_outcome_token_two_balance;
+            _user_two_token_two_burn_amount = initial_user_two_outcome_token_two_balance;
+        } else {
+            _user_two_payout                = initial_user_two_outcome_token_one_balance * 2;
+            _user_two_token_one_burn_amount = initial_user_two_outcome_token_one_balance;
+            _user_two_token_two_burn_amount = initial_user_two_outcome_token_one_balance;
+        };
 
+        // settle outcome tokens
+        // as market was resolved to the first outcome, payout is based on outcome token one proportions
         prediction_market::settle_outcome_tokens(user_one, market_id);
         prediction_market::settle_outcome_tokens(user_two, market_id);
         
         let updated_user_one_balance = primary_fungible_store::balance(user_one_addr, oracle_token_metadata);
         let updated_user_two_balance = primary_fungible_store::balance(user_two_addr, oracle_token_metadata);
 
-        assert!(updated_user_one_balance == initial_user_one_balance + ((initial_user_one_outcome_token_one_balance + initial_user_one_outcome_token_two_balance) / 2)  , 105);
-        assert!(updated_user_two_balance == initial_user_two_balance + ((initial_user_two_outcome_token_one_balance + initial_user_two_outcome_token_two_balance) / 2) , 106);
+        assert!(updated_user_one_balance == initial_user_one_balance + (_user_one_payout as u64) , 119);
+        assert!(updated_user_two_balance == initial_user_two_balance + (_user_two_payout as u64) , 120);
+
+        // create instance of expected event for user two tokens settled event
+        let tokens_settled_event = prediction_market::test_TokensSettledEvent(
+            market_id,
+            user_one_addr,
+            _user_one_payout,
+            (_user_one_token_one_burn_amount as u64),
+            (_user_one_token_two_burn_amount as u64)
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&tokens_settled_event), 121);
+
+        // create instance of expected event for user two tokens settled event
+        let tokens_settled_event = prediction_market::test_TokensSettledEvent(
+            market_id,
+            user_two_addr,
+            _user_two_payout,
+            (_user_two_token_one_burn_amount as u64),
+            (_user_two_token_two_burn_amount as u64)
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&tokens_settled_event), 122);
 
         // updated outcome token one balance
         let updated_user_one_outcome_token_one_balance = primary_fungible_store::balance(user_one_addr, outcome_token_one_metadata);
@@ -1873,35 +2077,47 @@ module optimistic_oracle_addr::prediction_market_test {
         let updated_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
         let updated_user_two_outcome_token_two_balance = primary_fungible_store::balance(user_two_addr, outcome_token_two_metadata);
 
-        // create instance of expected event for user one tokens settled event
-        let tokens_settled_event = prediction_market::test_TokensSettledEvent(
-            market_id,
-            user_one_addr,
-            (initial_user_one_outcome_token_one_balance + initial_user_one_outcome_token_two_balance) / 2,
-            initial_user_one_outcome_token_one_balance,
-            initial_user_one_outcome_token_two_balance
-        );
-
-        // verify if expected event was emitted
-        assert!(was_event_emitted(&tokens_settled_event), 107);
-
-        // create instance of expected event for user two tokens settled event
-        let tokens_settled_event = prediction_market::test_TokensSettledEvent(
-            market_id,
-            user_two_addr,
-            (initial_user_two_outcome_token_one_balance + initial_user_two_outcome_token_two_balance) / 2,
-            initial_user_two_outcome_token_one_balance,
-            initial_user_two_outcome_token_two_balance
-        );
-
-        // verify if expected event was emitted
-        assert!(was_event_emitted(&tokens_settled_event), 108);
-
         // check all outcome token balances are now zero after settling
-        assert!(updated_user_one_outcome_token_one_balance == 0, 109);
-        assert!(updated_user_one_outcome_token_two_balance == 0, 110);
-        assert!(updated_user_two_outcome_token_one_balance == 0, 111);
-        assert!(updated_user_two_outcome_token_two_balance == 0, 112);
+        assert!(updated_user_one_outcome_token_one_balance == initial_user_one_outcome_token_one_balance - (_user_one_token_one_burn_amount as u64), 123);
+        assert!(updated_user_one_outcome_token_two_balance == initial_user_one_outcome_token_two_balance - (_user_one_token_two_burn_amount as u64), 124);
+        assert!(updated_user_two_outcome_token_one_balance == initial_user_two_outcome_token_one_balance - (_user_two_token_one_burn_amount as u64), 125);
+        assert!(updated_user_two_outcome_token_two_balance == initial_user_two_outcome_token_two_balance - (_user_two_token_two_burn_amount as u64), 126);
+
+        // ----------------------------------
+        // Test redeem LP Tokens for Outcome tokens
+        // ----------------------------------
+
+        // get updated liquidity pool token reserves
+        let (
+            _,
+            _,
+            outcome_token_one_reserve,
+            outcome_token_two_reserve,
+            lp_total_supply,
+            _lp_token_metadata,
+            _
+        ) = prediction_market::get_pool(market_id);
+
+        // user can redeem LP tokens for outcome one and two tokens
+        let lp_token_redeem_amount = 1000;
+        
+        // calcs
+        let lp_proportion = ((lp_token_redeem_amount as u128) * FIXED_POINT_ACCURACY) / lp_total_supply;
+        let outcome_token_one_proportion_amount  = ((outcome_token_one_reserve * lp_proportion) / FIXED_POINT_ACCURACY);
+        let outcome_token_two_proportion_amount  = ((outcome_token_two_reserve * lp_proportion) / FIXED_POINT_ACCURACY);
+
+        // initial outcome token one balance
+        let initial_user_one_outcome_token_one_balance = primary_fungible_store::balance(user_one_addr, outcome_token_one_metadata);
+        let initial_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
+
+        prediction_market::redeem_lp_for_outcome_tokens(user_one, market_id, lp_token_redeem_amount);
+
+        // updated outcome token one balance
+        let updated_user_one_outcome_token_one_balance = primary_fungible_store::balance(user_one_addr, outcome_token_one_metadata);
+        let updated_user_one_outcome_token_two_balance = primary_fungible_store::balance(user_one_addr, outcome_token_two_metadata);
+
+        assert!(updated_user_one_outcome_token_one_balance == initial_user_one_outcome_token_one_balance + (outcome_token_one_proportion_amount as u64) , 113);
+        assert!(updated_user_one_outcome_token_two_balance == initial_user_one_outcome_token_two_balance + (outcome_token_two_proportion_amount as u64) , 114);
 
     }
 
@@ -1979,11 +2195,6 @@ module optimistic_oracle_addr::prediction_market_test {
             reward,
             required_bond
         );
-
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2077,11 +2288,6 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
@@ -2166,11 +2372,6 @@ module optimistic_oracle_addr::prediction_market_test {
             reward,
             required_bond
         );
-
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2257,11 +2458,6 @@ module optimistic_oracle_addr::prediction_market_test {
             reward,
             required_bond
         );
-
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2356,11 +2552,6 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
@@ -2379,32 +2570,6 @@ module optimistic_oracle_addr::prediction_market_test {
             market_id,
             asserted_outcome
         );
-
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
-        // let liveness     = DEFAULT_MIN_LIVENESS;
-        // let identifier   = DEFAULT_IDENTIFIER;
-
-        // calc bond to be transferred
-        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        // let bond;
-        // if(required_bond > minimum_bond){
-        //     bond = required_bond;
-        // } else {
-        //     bond = minimum_bond;
-        // };
-
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     asserter_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
 
         // user two disputes assertion
         prediction_market::dispute_assertion(
@@ -2495,11 +2660,6 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
@@ -2518,32 +2678,6 @@ module optimistic_oracle_addr::prediction_market_test {
             market_id,
             asserted_outcome
         );
-
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
-        // let liveness     = DEFAULT_MIN_LIVENESS;
-        // let identifier   = DEFAULT_IDENTIFIER;
-
-        // calc bond to be transferred
-        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        // let bond;
-        // if(required_bond > minimum_bond){
-        //     bond = required_bond;
-        // } else {
-        //     bond = minimum_bond;
-        // };
-
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     asserter_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
 
         // user two disputes assertion
         prediction_market::dispute_assertion(
@@ -2636,11 +2770,6 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
@@ -2660,31 +2789,7 @@ module optimistic_oracle_addr::prediction_market_test {
             asserted_outcome
         );
 
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
-        // let identifier   = DEFAULT_IDENTIFIER;
-
-        // calc bond to be transferred
-        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        // let bond;
-        // if(required_bond > minimum_bond){
-        //     bond = required_bond;
-        // } else {
-        //     bond = minimum_bond;
-        // };
-
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     asserter_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
 
         // fast forward to liveness over (after assertion has expired)
         timestamp::fast_forward_seconds(liveness + 1);
@@ -2779,17 +2884,12 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
 
         // init roles
         let asserter            = user_one;
-        // let asserter_addr       = user_one_addr;
+        let _asserter_addr      = user_one_addr;
         let disputer            = user_two;
         let _disputer_addr      = user_two_addr;
 
@@ -2802,32 +2902,6 @@ module optimistic_oracle_addr::prediction_market_test {
             market_id,
             asserted_outcome
         );
-
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
-        // let liveness     = DEFAULT_MIN_LIVENESS;
-        // let identifier   = DEFAULT_IDENTIFIER;
-
-        // calc bond to be transferred
-        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        // let bond;
-        // if(required_bond > minimum_bond){
-        //     bond = required_bond;
-        // } else {
-        //     bond = minimum_bond;
-        // };
-
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     asserter_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
 
         // user two disputes assertion
         prediction_market::dispute_assertion(
@@ -2845,7 +2919,7 @@ module optimistic_oracle_addr::prediction_market_test {
 
     #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
-    public entry fun test_cannot_create_outcome_tokens_for_resolved_market(
+    public entry fun test_cannot_deposit_liquidity_to_pool_for_resolved_market(
         aptos_framework: &signer,
         prediction_market: &signer,
         escalation_manager: &signer,
@@ -2929,13 +3003,15 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // ----------------------------------
-        // Assert Market
+        // Initialize Liquidity Pool
         // ----------------------------------
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+        // ----------------------------------
+        // Assert Market
+        // ----------------------------------
 
         // init params for truth assertion
         let asserted_outcome = outcome_one; // we assert outcome one is correct
@@ -2971,25 +3047,11 @@ module optimistic_oracle_addr::prediction_market_test {
         assert!(asserter_balance == mint_amount - bond, 101);
 
         // ----------------------------------
-        // Get assertion id 
+        // Set defaults
         // ----------------------------------
 
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
         let liveness     = DEFAULT_MIN_LIVENESS;
         let identifier   = DEFAULT_IDENTIFIER;
-
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     asserter_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
 
         // ----------------------------------
         // Dispute Assertion
@@ -3122,20 +3184,22 @@ module optimistic_oracle_addr::prediction_market_test {
         assert!(resolved                 == true                 , 111);
         assert!(view_asserted_outcome_id != vector::empty<u8>()  , 112);
 
-        // should fail: cannot create outcome tokens after market resolved
-        let tokens_to_create = 1000;
-        prediction_market::create_outcome_tokens(user_one, market_id, tokens_to_create);
+        // should fail: cannot deposit liquidity after market resolved
+        let deposit_amount = 1000;
+        prediction_market::deposit_liquidity(user_one, market_id, deposit_amount);
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
-    #[expected_failure]
-    public entry fun test_cannot_create_outcome_tokens_if_market_does_not_exist(
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
+    public entry fun test_cannot_buy_outcome_tokens_after_market_resolved(
         aptos_framework: &signer,
         prediction_market: &signer,
         escalation_manager: &signer,
         user_one: &signer,
         user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
     )  {
 
         // setup environment
@@ -3143,12 +3207,12 @@ module optimistic_oracle_addr::prediction_market_test {
 
         // setup escalation manager
         escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
-
+        
         let block_assertion    = false;
         let validate_asserters = false;
         let validate_disputers = false;
 
-        // call set_assertion_policy to set validate_asserters to false
+        // set assertion policy
         escalation_manager::set_assertion_policy(
             escalation_manager,
             block_assertion,
@@ -3156,24 +3220,21 @@ module optimistic_oracle_addr::prediction_market_test {
             validate_disputers
         );
 
-        // call set_whitelisted_dispute_caller
-        escalation_manager::set_whitelisted_dispute_caller(
-            escalation_manager,
-            user_two_addr,
-            true
-        );
-
         // setup oracle dapp token
         oracle_token::setup_test(prediction_market);
 
-        // mint some tokens to user one for bond
-        let mint_amount = 100000000;
-        oracle_token::mint(prediction_market, user_one_addr, mint_amount);
-        oracle_token::mint(prediction_market, user_two_addr, mint_amount);
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
 
         // setup admin properties
         let oracle_token_metadata   = oracle_token::metadata();
-        let treasury_addr           = user_one_addr;
+        let treasury_addr           = treasury_addr;
         let min_liveness            = DEFAULT_MIN_LIVENESS;
         let default_fee             = DEFAULT_FEE;
         let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
@@ -3188,98 +3249,9 @@ module optimistic_oracle_addr::prediction_market_test {
             burned_bond_percentage
         );
 
-        // init market params
-        let outcome_one             = b"Outcome One";
-        let outcome_two             = b"Outcome Two";
-        let description             = b"Test Initialize Market";
-        let image_url               = b"Image URL of Market";
-        let reward                  = 0; 
-        let required_bond           = 1;
-
-        // call initialize_market
-        prediction_market::initialize_market(
-            user_one,
-            outcome_one,
-            outcome_two,
-            description,
-            image_url,
-            reward,
-            required_bond
-        );
-
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-
-        // let wrong_description   = b"Wrong";
-        let wrong_market_id     = 999;
-
-        // create some outcome tokens for user one
-        let tokens_to_create = 1000;
-        prediction_market::create_outcome_tokens(user_one, wrong_market_id, tokens_to_create);
-
-    }
-
-
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
-    #[expected_failure]
-    public entry fun test_cannot_redeem_outcome_tokens_if_market_does_not_exist(
-        aptos_framework: &signer,
-        prediction_market: &signer,
-        escalation_manager: &signer,
-        user_one: &signer,
-        user_two: &signer,
-    )  {
-
-        // setup environment
-        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
-
-        // setup escalation manager
-        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
-
-        let block_assertion    = false;
-        let validate_asserters = false;
-        let validate_disputers = false;
-
-        // call set_assertion_policy to set validate_asserters to false
-        escalation_manager::set_assertion_policy(
-            escalation_manager,
-            block_assertion,
-            validate_asserters,
-            validate_disputers
-        );
-
-        // call set_whitelisted_dispute_caller
-        escalation_manager::set_whitelisted_dispute_caller(
-            escalation_manager,
-            user_two_addr,
-            true
-        );
-
-        // setup oracle dapp token
-        oracle_token::setup_test(prediction_market);
-
-        // mint some tokens to user one for bond
-        let mint_amount = 100000000;
-        oracle_token::mint(prediction_market, user_one_addr, mint_amount);
-        oracle_token::mint(prediction_market, user_two_addr, mint_amount);
-
-        // setup admin properties
-        let oracle_token_metadata   = oracle_token::metadata();
-        let treasury_addr           = user_one_addr;
-        let min_liveness            = DEFAULT_MIN_LIVENESS;
-        let default_fee             = DEFAULT_FEE;
-        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
-
-        // call set_admin_properties
-        prediction_market::set_admin_properties(
-            prediction_market,
-            oracle_token_metadata,
-            min_liveness,
-            default_fee,
-            treasury_addr,
-            burned_bond_percentage
-        );
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
 
         // init market params
         let outcome_one             = b"Outcome One";
@@ -3287,7 +3259,7 @@ module optimistic_oracle_addr::prediction_market_test {
         let description             = b"Test Initialize Market";
         let image_url               = b"Image URL of Market";
         let reward                  = 0; 
-        let required_bond           = 1;
+        let required_bond           = 100_000;
 
         // get next market id
         let market_id = prediction_market::get_next_market_id();
@@ -3303,24 +3275,742 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
 
-        // create some outcome tokens for user one
-        let tokens_to_create = 1000;
-        prediction_market::create_outcome_tokens(user_one, market_id, tokens_to_create);
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
 
-        // let wrong_description   = b"Wrong";
-        let wrong_market_id     = 999;
-        
-        // redeem should fail
-        let tokens_to_redeem = 500;
-        prediction_market::redeem_outcome_tokens(user_one, wrong_market_id, tokens_to_redeem);
+        // ----------------------------------
+        // Assert Market
+        // ----------------------------------
 
+        // init params for truth assertion
+        let asserted_outcome = outcome_one; // we assert outcome one is correct
+
+        // init roles
+        let asserter            = user_two;
+        let asserter_addr       = user_two_addr;
+        let disputer            = user_three;
+        let disputer_addr       = user_three_addr;
+        let settle_caller       = user_one;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
+
+        // user two to call assert_market
+        prediction_market::assert_market(
+            asserter,
+            market_id,
+            asserted_outcome
+        );
+
+        // calc bond to be transferred
+        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        let bond;
+        if(required_bond > minimum_bond){
+            bond =  required_bond;
+        } else {
+            bond = minimum_bond;
+        };
+
+        // bond is transferred from asserter to module
+        let asserter_balance = primary_fungible_store::balance(asserter_addr, oracle_token_metadata);
+        assert!(asserter_balance == mint_amount - bond, 101);
+
+        // ----------------------------------
+        // Set defaults
+        // ----------------------------------
+
+        let liveness     = DEFAULT_MIN_LIVENESS;
+        let identifier   = DEFAULT_IDENTIFIER;
+
+        // ----------------------------------
+        // Dispute Assertion
+        // ----------------------------------
+
+        // user three disputes assertion
+        prediction_market::dispute_assertion(
+            disputer,
+            assertion_id
+        );
+
+        // bond is transferred from disputer to module
+        let disputer_balance = primary_fungible_store::balance(disputer_addr, oracle_token_metadata);
+        assert!(disputer_balance == mint_amount - bond, 102);
+
+        // create instance of expected event
+        let assertion_disputed_event = prediction_market::test_AssertionDisputedEvent(
+            assertion_id,
+            disputer_addr // disputer
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&assertion_disputed_event), 103);
+
+        // get views to confirm assertion has been updated with disputer
+        let (
+            _asserter, 
+            _settled, 
+            _settlement_resolution, 
+            _liveness, 
+            assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            _bond, 
+            disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(option::destroy_some(disputer) == disputer_addr, 104);
+
+        // ----------------------------------
+        // Escalation Manager to set arbitration resolution
+        // ----------------------------------
+
+        // set arbitration resolution parameters
+        let time                    = bcs::to_bytes<u64>(&assertion_time); 
+        let ancillary_data          = prediction_market::stamp_assertion(assertion_id, asserter_addr);
+        let arbitration_resolution  = true; // asserter wins
+        let override                = false;
+
+        // escalation manager to resolve the dispute
+        escalation_manager::set_arbitration_resolution(
+            escalation_manager,
+            time,
+            identifier,
+            ancillary_data,
+            arbitration_resolution,
+            override
+        );
+
+        // fast forward to liveness over (after assertion has expired)
+        timestamp::fast_forward_seconds(liveness + 1);
+
+        // get asserter, disputer, and treasury balance before assertion settled
+        let initial_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let initial_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let initial_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // ----------------------------------
+        // Settle Assertion
+        // ----------------------------------
+
+        // anyone can settle the assertion
+        prediction_market::settle_assertion(
+            settle_caller,
+            assertion_id
+        );
+
+        // get views to confirm assertion has been settled
+        let (
+            _asserter, 
+            settled, 
+            settlement_resolution, 
+            _liveness, 
+            _assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            bond, 
+            _disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(settled                 == true                     , 105);
+        assert!(settlement_resolution   == arbitration_resolution   , 106);
+
+        // get asserter, disputer, and treasury balance after assertion settled
+        let updated_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let updated_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let updated_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // calculate fee 
+        let oracle_fee            = (burned_bond_percentage * bond) / 10000;
+        let bond_recipient_amount = (bond * 2) - oracle_fee;
+
+        // asserter should receive his bond + disputer bond less oracle fee
+        assert!(updated_asserter_balance == initial_asserter_balance + bond_recipient_amount, 107);
+
+        // treasury should receive oracle fee
+        assert!(updated_treasury_balance == initial_treasury_balance + oracle_fee, 108);
+
+        // no changes to disputer balance as he lost the dispute
+        assert!(updated_disputer_balance == initial_disputer_balance, 109);
+
+        // test view get market
+        let (
+            _creator,
+            resolved,
+            view_asserted_outcome_id,
+            _reward,
+            _required_bond,
+            _view_outcome_one,
+            _view_outcome_two,
+            _view_description,
+            _view_image_url,
+            _outcome_token_one_metadata,
+            _outcome_token_two_metadata,
+            _outcome_token_one_address,
+            _outcome_token_two_address
+        ) = prediction_market::get_market(market_id);
+
+        // market is now resolved and asserted outcome id is reset 
+        assert!(resolved                 == true                 , 111);
+        assert!(view_asserted_outcome_id != vector::empty<u8>()  , 112);
+
+        // should fail: cannot buy outcome tokens after market resolved
+        let buy_amount      = 1000;
+        let outcome_token   = b"one";
+        prediction_market::buy_outcome_tokens(user_one, market_id, outcome_token, buy_amount);
     }
 
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
+    public entry fun test_cannot_sell_outcome_tokens_after_market_resolved(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+        // ----------------------------------
+        // Assert Market
+        // ----------------------------------
+
+        // init params for truth assertion
+        let asserted_outcome = outcome_one; // we assert outcome one is correct
+
+        // init roles
+        let asserter            = user_two;
+        let asserter_addr       = user_two_addr;
+        let disputer            = user_three;
+        let disputer_addr       = user_three_addr;
+        let settle_caller       = user_one;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
+
+        // user two to call assert_market
+        prediction_market::assert_market(
+            asserter,
+            market_id,
+            asserted_outcome
+        );
+
+        // calc bond to be transferred
+        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        let bond;
+        if(required_bond > minimum_bond){
+            bond =  required_bond;
+        } else {
+            bond = minimum_bond;
+        };
+
+        // bond is transferred from asserter to module
+        let asserter_balance = primary_fungible_store::balance(asserter_addr, oracle_token_metadata);
+        assert!(asserter_balance == mint_amount - bond, 101);
+
+        // ----------------------------------
+        // Set defaults
+        // ----------------------------------
+
+        let liveness     = DEFAULT_MIN_LIVENESS;
+        let identifier   = DEFAULT_IDENTIFIER;
+
+        // ----------------------------------
+        // Dispute Assertion
+        // ----------------------------------
+
+        // user three disputes assertion
+        prediction_market::dispute_assertion(
+            disputer,
+            assertion_id
+        );
+
+        // bond is transferred from disputer to module
+        let disputer_balance = primary_fungible_store::balance(disputer_addr, oracle_token_metadata);
+        assert!(disputer_balance == mint_amount - bond, 102);
+
+        // create instance of expected event
+        let assertion_disputed_event = prediction_market::test_AssertionDisputedEvent(
+            assertion_id,
+            disputer_addr // disputer
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&assertion_disputed_event), 103);
+
+        // get views to confirm assertion has been updated with disputer
+        let (
+            _asserter, 
+            _settled, 
+            _settlement_resolution, 
+            _liveness, 
+            assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            _bond, 
+            disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(option::destroy_some(disputer) == disputer_addr, 104);
+
+        // ----------------------------------
+        // Escalation Manager to set arbitration resolution
+        // ----------------------------------
+
+        // set arbitration resolution parameters
+        let time                    = bcs::to_bytes<u64>(&assertion_time); 
+        let ancillary_data          = prediction_market::stamp_assertion(assertion_id, asserter_addr);
+        let arbitration_resolution  = true; // asserter wins
+        let override                = false;
+
+        // escalation manager to resolve the dispute
+        escalation_manager::set_arbitration_resolution(
+            escalation_manager,
+            time,
+            identifier,
+            ancillary_data,
+            arbitration_resolution,
+            override
+        );
+
+        // fast forward to liveness over (after assertion has expired)
+        timestamp::fast_forward_seconds(liveness + 1);
+
+        // get asserter, disputer, and treasury balance before assertion settled
+        let initial_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let initial_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let initial_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // ----------------------------------
+        // Settle Assertion
+        // ----------------------------------
+
+        // anyone can settle the assertion
+        prediction_market::settle_assertion(
+            settle_caller,
+            assertion_id
+        );
+
+        // get views to confirm assertion has been settled
+        let (
+            _asserter, 
+            settled, 
+            settlement_resolution, 
+            _liveness, 
+            _assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            bond, 
+            _disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(settled                 == true                     , 105);
+        assert!(settlement_resolution   == arbitration_resolution   , 106);
+
+        // get asserter, disputer, and treasury balance after assertion settled
+        let updated_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let updated_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let updated_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // calculate fee 
+        let oracle_fee            = (burned_bond_percentage * bond) / 10000;
+        let bond_recipient_amount = (bond * 2) - oracle_fee;
+
+        // asserter should receive his bond + disputer bond less oracle fee
+        assert!(updated_asserter_balance == initial_asserter_balance + bond_recipient_amount, 107);
+
+        // treasury should receive oracle fee
+        assert!(updated_treasury_balance == initial_treasury_balance + oracle_fee, 108);
+
+        // no changes to disputer balance as he lost the dispute
+        assert!(updated_disputer_balance == initial_disputer_balance, 109);
+
+        // test view get market
+        let (
+            _creator,
+            resolved,
+            view_asserted_outcome_id,
+            _reward,
+            _required_bond,
+            _view_outcome_one,
+            _view_outcome_two,
+            _view_description,
+            _view_image_url,
+            _outcome_token_one_metadata,
+            _outcome_token_two_metadata,
+            _outcome_token_one_address,
+            _outcome_token_two_address
+        ) = prediction_market::get_market(market_id);
+
+        // market is now resolved and asserted outcome id is reset 
+        assert!(resolved                 == true                 , 111);
+        assert!(view_asserted_outcome_id != vector::empty<u8>()  , 112);
+
+        // should fail: cannot buy outcome tokens after market resolved
+        let sell_amount     = 1000;
+        let outcome_token   = b"one";
+        prediction_market::sell_outcome_tokens(user_one, market_id, outcome_token, sell_amount);
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
+    public entry fun test_cannot_initialize_pool_for_resolved_market(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+        // ----------------------------------
+        // Assert Market
+        // ----------------------------------
+
+        // init params for truth assertion
+        let asserted_outcome = outcome_one; // we assert outcome one is correct
+
+        // init roles
+        let asserter            = user_two;
+        let asserter_addr       = user_two_addr;
+        let disputer            = user_three;
+        let disputer_addr       = user_three_addr;
+        let settle_caller       = user_one;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
+
+        // user two to call assert_market
+        prediction_market::assert_market(
+            asserter,
+            market_id,
+            asserted_outcome
+        );
+
+        // calc bond to be transferred
+        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        let bond;
+        if(required_bond > minimum_bond){
+            bond =  required_bond;
+        } else {
+            bond = minimum_bond;
+        };
+
+        // bond is transferred from asserter to module
+        let asserter_balance = primary_fungible_store::balance(asserter_addr, oracle_token_metadata);
+        assert!(asserter_balance == mint_amount - bond, 101);
+
+        // ----------------------------------
+        // Set defaults
+        // ----------------------------------
+
+        let liveness     = DEFAULT_MIN_LIVENESS;
+        let identifier   = DEFAULT_IDENTIFIER;
+
+        // ----------------------------------
+        // Dispute Assertion
+        // ----------------------------------
+
+        // user three disputes assertion
+        prediction_market::dispute_assertion(
+            disputer,
+            assertion_id
+        );
+
+        // bond is transferred from disputer to module
+        let disputer_balance = primary_fungible_store::balance(disputer_addr, oracle_token_metadata);
+        assert!(disputer_balance == mint_amount - bond, 102);
+
+        // create instance of expected event
+        let assertion_disputed_event = prediction_market::test_AssertionDisputedEvent(
+            assertion_id,
+            disputer_addr // disputer
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&assertion_disputed_event), 103);
+
+        // get views to confirm assertion has been updated with disputer
+        let (
+            _asserter, 
+            _settled, 
+            _settlement_resolution, 
+            _liveness, 
+            assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            _bond, 
+            disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(option::destroy_some(disputer) == disputer_addr, 104);
+
+        // ----------------------------------
+        // Escalation Manager to set arbitration resolution
+        // ----------------------------------
+
+        // set arbitration resolution parameters
+        let time                    = bcs::to_bytes<u64>(&assertion_time); 
+        let ancillary_data          = prediction_market::stamp_assertion(assertion_id, asserter_addr);
+        let arbitration_resolution  = true; // asserter wins
+        let override                = false;
+
+        // escalation manager to resolve the dispute
+        escalation_manager::set_arbitration_resolution(
+            escalation_manager,
+            time,
+            identifier,
+            ancillary_data,
+            arbitration_resolution,
+            override
+        );
+
+        // fast forward to liveness over (after assertion has expired)
+        timestamp::fast_forward_seconds(liveness + 1);
+
+        // get asserter, disputer, and treasury balance before assertion settled
+        let initial_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let initial_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let initial_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // ----------------------------------
+        // Settle Assertion
+        // ----------------------------------
+
+        // anyone can settle the assertion
+        prediction_market::settle_assertion(
+            settle_caller,
+            assertion_id
+        );
+
+        // get views to confirm assertion has been settled
+        let (
+            _asserter, 
+            settled, 
+            settlement_resolution, 
+            _liveness, 
+            _assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            bond, 
+            _disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(settled                 == true                     , 105);
+        assert!(settlement_resolution   == arbitration_resolution   , 106);
+
+        // get asserter, disputer, and treasury balance after assertion settled
+        let updated_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let updated_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let updated_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // calculate fee 
+        let oracle_fee            = (burned_bond_percentage * bond) / 10000;
+        let bond_recipient_amount = (bond * 2) - oracle_fee;
+
+        // asserter should receive his bond + disputer bond less oracle fee
+        assert!(updated_asserter_balance == initial_asserter_balance + bond_recipient_amount, 107);
+
+        // treasury should receive oracle fee
+        assert!(updated_treasury_balance == initial_treasury_balance + oracle_fee, 108);
+
+        // no changes to disputer balance as he lost the dispute
+        assert!(updated_disputer_balance == initial_disputer_balance, 109);
+
+        // test view get market
+        let (
+            _creator,
+            resolved,
+            view_asserted_outcome_id,
+            _reward,
+            _required_bond,
+            _view_outcome_one,
+            _view_outcome_two,
+            _view_description,
+            _view_image_url,
+            _outcome_token_one_metadata,
+            _outcome_token_two_metadata,
+            _outcome_token_one_address,
+            _outcome_token_two_address
+        ) = prediction_market::get_market(market_id);
+
+        // market is now resolved and asserted outcome id is reset 
+        assert!(resolved                 == true                 , 111);
+        assert!(view_asserted_outcome_id != vector::empty<u8>()  , 112);
+
+        // should fail: cannot initialize pool after market resolved
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+    }
+
+    
 
     #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure]
@@ -3403,11 +4093,6 @@ module optimistic_oracle_addr::prediction_market_test {
             reward,
             required_bond
         );
-
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
         // init params for truth assertion
         let asserted_outcome = b"invalid outcome"; 
@@ -3508,13 +4193,15 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome    = outcome_one; 
+
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
 
         // ----------------------------------
         // Assert Market
@@ -3534,9 +4221,9 @@ module optimistic_oracle_addr::prediction_market_test {
         // Outcome Tokens interactions test
         // ----------------------------------
 
-        // create some outcome tokens for user one
-        let tokens_to_create = 1000;
-        prediction_market::create_outcome_tokens(user_one, market_id, tokens_to_create);
+        // redeem some LP tokens for outcome tokens for user one
+        let lp_token_redeem_amount = 1000;
+        prediction_market::redeem_lp_for_outcome_tokens(user_one, market_id, lp_token_redeem_amount);
 
         // should fail if user tries to settle outcome tokens now before market has been resolved
         prediction_market::settle_outcome_tokens(user_one, market_id);
@@ -3626,11 +4313,6 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome    = outcome_one; 
 
@@ -3650,35 +4332,6 @@ module optimistic_oracle_addr::prediction_market_test {
             market_id,
             asserted_outcome
         );
-
-        // ----------------------------------
-        // Get assertion id 
-        // ----------------------------------
-
-        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        // let bond;
-        // if(required_bond > minimum_bond){
-        //     bond =  required_bond;
-        // } else {
-        //     bond = minimum_bond;
-        // };
-
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
-        // let liveness     = DEFAULT_MIN_LIVENESS;
-        // let identifier   = DEFAULT_IDENTIFIER;
-
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     user_two_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
 
         // should fail: cannot settle assertion before expiration
         prediction_market::settle_assertion(
@@ -3771,11 +4424,6 @@ module optimistic_oracle_addr::prediction_market_test {
             required_bond
         );
 
-        // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
-        // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
-        // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
-
         // init params for truth assertion
         let asserted_outcome    = outcome_one; 
 
@@ -3796,34 +4444,7 @@ module optimistic_oracle_addr::prediction_market_test {
             asserted_outcome
         );
 
-        // ----------------------------------
-        // Get assertion id 
-        // ----------------------------------
-
-        // let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
-        // let bond;
-        // if(required_bond > minimum_bond){
-        //     bond =  required_bond;
-        // } else {
-        //     bond = minimum_bond;
-        // };
-
-        // compose claim
-        // let claim = prediction_market::compose_claim(asserted_outcome, description);
-
-        // get the assertion id
-        // let time         = timestamp::now_microseconds();  
-        let liveness     = DEFAULT_MIN_LIVENESS;
-        // let identifier   = DEFAULT_IDENTIFIER;
-
-        // let assertion_id = prediction_market::get_assertion_id(
-        //     user_two_addr,
-        //     claim,
-        //     time,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
+        let liveness = DEFAULT_MIN_LIVENESS;
 
         // fast forward to liveness over (after assertion has expired)
         timestamp::fast_forward_seconds(liveness + 1);
@@ -3840,5 +4461,1530 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
     }
+
+    
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[expected_failure(abort_code = ERROR_POOL_ALREADY_INITIALIZED, location = prediction_market)]
+    public entry fun test_cannot_initialize_pool_for_market_more_than_once(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // call set_assertion_policy to set validate_asserters to false
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // call set_whitelisted_dispute_caller
+        escalation_manager::set_whitelisted_dispute_caller(
+            escalation_manager,
+            user_two_addr,
+            true
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one for bond
+        let mint_amount = 100000000;
+        oracle_token::mint(prediction_market, user_one_addr, mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr, mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = user_one_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 1;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+        // should fail
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
+    public entry fun test_cannot_redeem_lp_tokens_for_outcome_tokens_if_pool_is_not_initialized(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // call set_assertion_policy to set validate_asserters to false
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // call set_whitelisted_dispute_caller
+        escalation_manager::set_whitelisted_dispute_caller(
+            escalation_manager,
+            user_two_addr,
+            true
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one for bond
+        let mint_amount = 100000000;
+        oracle_token::mint(prediction_market, user_one_addr, mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr, mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = user_one_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 1;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+        
+        let lp_token_redeem_amount = 200;
+        prediction_market::redeem_lp_for_outcome_tokens(user_two, market_id, lp_token_redeem_amount);        
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
+    public entry fun test_cannot_settle_outcome_tokens_for_resolved_market_if_pool_has_not_been_initialized(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Assert Market
+        // ----------------------------------
+
+        // init params for truth assertion
+        let asserted_outcome = outcome_one; // we assert outcome one is correct
+
+        // init roles
+        let asserter            = user_two;
+        let asserter_addr       = user_two_addr;
+        let disputer            = user_three;
+        let disputer_addr       = user_three_addr;
+        let settle_caller       = user_one;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
+
+        // user two to call assert_market
+        prediction_market::assert_market(
+            asserter,
+            market_id,
+            asserted_outcome
+        );
+
+        // calc bond to be transferred
+        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        let bond;
+        if(required_bond > minimum_bond){
+            bond =  required_bond;
+        } else {
+            bond = minimum_bond;
+        };
+
+        // bond is transferred from asserter to module
+        let asserter_balance = primary_fungible_store::balance(asserter_addr, oracle_token_metadata);
+        assert!(asserter_balance == mint_amount - bond, 101);
+
+        // ----------------------------------
+        // Set defaults
+        // ----------------------------------
+
+        let liveness     = DEFAULT_MIN_LIVENESS;
+        let identifier   = DEFAULT_IDENTIFIER;
+
+        // ----------------------------------
+        // Dispute Assertion
+        // ----------------------------------
+
+        // user three disputes assertion
+        prediction_market::dispute_assertion(
+            disputer,
+            assertion_id
+        );
+
+        // bond is transferred from disputer to module
+        let disputer_balance = primary_fungible_store::balance(disputer_addr, oracle_token_metadata);
+        assert!(disputer_balance == mint_amount - bond, 102);
+
+        // create instance of expected event
+        let assertion_disputed_event = prediction_market::test_AssertionDisputedEvent(
+            assertion_id,
+            disputer_addr // disputer
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&assertion_disputed_event), 103);
+
+        // get views to confirm assertion has been updated with disputer
+        let (
+            _asserter, 
+            _settled, 
+            _settlement_resolution, 
+            _liveness, 
+            assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            _bond, 
+            disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(option::destroy_some(disputer) == disputer_addr, 104);
+
+        // ----------------------------------
+        // Escalation Manager to set arbitration resolution
+        // ----------------------------------
+
+        // set arbitration resolution parameters
+        let time                    = bcs::to_bytes<u64>(&assertion_time); 
+        let ancillary_data          = prediction_market::stamp_assertion(assertion_id, asserter_addr);
+        let arbitration_resolution  = true; // asserter wins
+        let override                = false;
+
+        // escalation manager to resolve the dispute
+        escalation_manager::set_arbitration_resolution(
+            escalation_manager,
+            time,
+            identifier,
+            ancillary_data,
+            arbitration_resolution,
+            override
+        );
+
+        // fast forward to liveness over (after assertion has expired)
+        timestamp::fast_forward_seconds(liveness + 1);
+
+        // get asserter, disputer, and treasury balance before assertion settled
+        let initial_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let initial_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let initial_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // ----------------------------------
+        // Settle Assertion
+        // ----------------------------------
+
+        // anyone can settle the assertion
+        prediction_market::settle_assertion(
+            settle_caller,
+            assertion_id
+        );
+
+        // get views to confirm assertion has been settled
+        let (
+            _asserter, 
+            settled, 
+            settlement_resolution, 
+            _liveness, 
+            _assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            bond, 
+            _disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(settled                 == true                     , 105);
+        assert!(settlement_resolution   == arbitration_resolution   , 106);
+
+        // get asserter, disputer, and treasury balance after assertion settled
+        let updated_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let updated_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let updated_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // calculate fee 
+        let oracle_fee            = (burned_bond_percentage * bond) / 10000;
+        let bond_recipient_amount = (bond * 2) - oracle_fee;
+
+        // asserter should receive his bond + disputer bond less oracle fee
+        assert!(updated_asserter_balance == initial_asserter_balance + bond_recipient_amount, 107);
+
+        // treasury should receive oracle fee
+        assert!(updated_treasury_balance == initial_treasury_balance + oracle_fee, 108);
+
+        // no changes to disputer balance as he lost the dispute
+        assert!(updated_disputer_balance == initial_disputer_balance, 109);
+
+        // test view get market
+        let (
+            _creator,
+            resolved,
+            view_asserted_outcome_id,
+            _reward,
+            _required_bond,
+            _view_outcome_one,
+            _view_outcome_two,
+            _view_description,
+            _view_image_url,
+            _outcome_token_one_metadata,
+            _outcome_token_two_metadata,
+            _outcome_token_one_address,
+            _outcome_token_two_address
+        ) = prediction_market::get_market(market_id);
+
+        // market is now resolved and asserted outcome id is reset 
+        assert!(resolved                 == true                 , 111);
+        assert!(view_asserted_outcome_id != vector::empty<u8>()  , 112);
+
+        // should fail: cannot settle outcome tokens after market resolved
+        prediction_market::settle_outcome_tokens(user_one, market_id);
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
+    public entry fun test_cannot_withdraw_liqudity_after_market_has_been_resolved(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Assert Market
+        // ----------------------------------
+
+        // init params for truth assertion
+        let asserted_outcome = outcome_one; // we assert outcome one is correct
+
+        // init roles
+        let asserter            = user_two;
+        let asserter_addr       = user_two_addr;
+        let disputer            = user_three;
+        let disputer_addr       = user_three_addr;
+        let settle_caller       = user_one;
+
+        // get next assertion id
+        let assertion_id = prediction_market::get_next_assertion_id();
+
+        // user two to call assert_market
+        prediction_market::assert_market(
+            asserter,
+            market_id,
+            asserted_outcome
+        );
+
+        // calc bond to be transferred
+        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        let bond;
+        if(required_bond > minimum_bond){
+            bond =  required_bond;
+        } else {
+            bond = minimum_bond;
+        };
+
+        // bond is transferred from asserter to module
+        let asserter_balance = primary_fungible_store::balance(asserter_addr, oracle_token_metadata);
+        assert!(asserter_balance == mint_amount - bond, 101);
+
+        // ----------------------------------
+        // Set defaults
+        // ----------------------------------
+
+        let liveness     = DEFAULT_MIN_LIVENESS;
+        let identifier   = DEFAULT_IDENTIFIER;
+
+        // ----------------------------------
+        // Dispute Assertion
+        // ----------------------------------
+
+        // user three disputes assertion
+        prediction_market::dispute_assertion(
+            disputer,
+            assertion_id
+        );
+
+        // bond is transferred from disputer to module
+        let disputer_balance = primary_fungible_store::balance(disputer_addr, oracle_token_metadata);
+        assert!(disputer_balance == mint_amount - bond, 102);
+
+        // create instance of expected event
+        let assertion_disputed_event = prediction_market::test_AssertionDisputedEvent(
+            assertion_id,
+            disputer_addr // disputer
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&assertion_disputed_event), 103);
+
+        // get views to confirm assertion has been updated with disputer
+        let (
+            _asserter, 
+            _settled, 
+            _settlement_resolution, 
+            _liveness, 
+            assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            _bond, 
+            disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(option::destroy_some(disputer) == disputer_addr, 104);
+
+        // ----------------------------------
+        // Escalation Manager to set arbitration resolution
+        // ----------------------------------
+
+        // set arbitration resolution parameters
+        let time                    = bcs::to_bytes<u64>(&assertion_time); 
+        let ancillary_data          = prediction_market::stamp_assertion(assertion_id, asserter_addr);
+        let arbitration_resolution  = true; // asserter wins
+        let override                = false;
+
+        // escalation manager to resolve the dispute
+        escalation_manager::set_arbitration_resolution(
+            escalation_manager,
+            time,
+            identifier,
+            ancillary_data,
+            arbitration_resolution,
+            override
+        );
+
+        // fast forward to liveness over (after assertion has expired)
+        timestamp::fast_forward_seconds(liveness + 1);
+
+        // get asserter, disputer, and treasury balance before assertion settled
+        let initial_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let initial_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let initial_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // ----------------------------------
+        // Settle Assertion
+        // ----------------------------------
+
+        // anyone can settle the assertion
+        prediction_market::settle_assertion(
+            settle_caller,
+            assertion_id
+        );
+
+        // get views to confirm assertion has been settled
+        let (
+            _asserter, 
+            settled, 
+            settlement_resolution, 
+            _liveness, 
+            _assertion_time, 
+            _expiration_time, 
+            _identifier, 
+            bond, 
+            _disputer
+        ) = prediction_market::get_assertion(assertion_id);
+
+        assert!(settled                 == true                     , 105);
+        assert!(settlement_resolution   == arbitration_resolution   , 106);
+
+        // get asserter, disputer, and treasury balance after assertion settled
+        let updated_asserter_balance = primary_fungible_store::balance(asserter_addr    , oracle_token_metadata);
+        let updated_disputer_balance = primary_fungible_store::balance(disputer_addr    , oracle_token_metadata);
+        let updated_treasury_balance = primary_fungible_store::balance(treasury_addr    , oracle_token_metadata);
+
+        // calculate fee 
+        let oracle_fee            = (burned_bond_percentage * bond) / 10000;
+        let bond_recipient_amount = (bond * 2) - oracle_fee;
+
+        // asserter should receive his bond + disputer bond less oracle fee
+        assert!(updated_asserter_balance == initial_asserter_balance + bond_recipient_amount, 107);
+
+        // treasury should receive oracle fee
+        assert!(updated_treasury_balance == initial_treasury_balance + oracle_fee, 108);
+
+        // no changes to disputer balance as he lost the dispute
+        assert!(updated_disputer_balance == initial_disputer_balance, 109);
+
+        // test view get market
+        let (
+            _creator,
+            resolved,
+            view_asserted_outcome_id,
+            _reward,
+            _required_bond,
+            _view_outcome_one,
+            _view_outcome_two,
+            _view_description,
+            _view_image_url,
+            _outcome_token_one_metadata,
+            _outcome_token_two_metadata,
+            _outcome_token_one_address,
+            _outcome_token_two_address
+        ) = prediction_market::get_market(market_id);
+
+        // market is now resolved and asserted outcome id is reset 
+        assert!(resolved                 == true                 , 111);
+        assert!(view_asserted_outcome_id != vector::empty<u8>()  , 112);
+
+        // should fail: cannot withdraw liquidity after market resolved
+        let withdraw_amount = 1000;
+        prediction_market::withdraw_liquidity(user_one, market_id, withdraw_amount);
+    }
+
    
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    public entry fun test_user_can_withdraw_liquidity(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Assert Market
+        // ----------------------------------
+
+        // init params for truth assertion
+        let asserted_outcome = outcome_one; // we assert outcome one is correct
+
+        // init roles
+        let asserter            = user_two;
+        let asserter_addr       = user_two_addr;
+
+        // user two to call assert_market
+        prediction_market::assert_market(
+            asserter,
+            market_id,
+            asserted_outcome
+        );
+
+        // calc bond to be transferred
+        let minimum_bond = (DEFAULT_FEE * 10000) / DEFAULT_BURNED_BOND_PERCENTAGE;
+        let bond;
+        if(required_bond > minimum_bond){
+            bond =  required_bond;
+        } else {
+            bond = minimum_bond;
+        };
+
+        // bond is transferred from asserter to module
+        let asserter_balance = primary_fungible_store::balance(asserter_addr, oracle_token_metadata);
+        assert!(asserter_balance == mint_amount - bond, 101);
+
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+        // test user can withdraw liquidity
+        let withdraw_amount = 1000;
+        prediction_market::withdraw_liquidity(user_one, market_id, withdraw_amount);
+
+        let lp_proportion                     = ((withdraw_amount as u128) * FIXED_POINT_ACCURACY) / (initial_liquidity / 2);
+        let outcome_token_one_withdraw_amount = ((initial_liquidity/2 * lp_proportion) / FIXED_POINT_ACCURACY);
+        let outcome_token_two_withdraw_amount = ((initial_liquidity/2 * lp_proportion) / FIXED_POINT_ACCURACY);
+        let collateral_amount                 = outcome_token_one_withdraw_amount + outcome_token_two_withdraw_amount;
+
+        // create instance of expected event
+        let withdraw_liquidity_event = prediction_market::test_WithdrawLiquidityEvent(
+            user_one_addr,
+            market_id,
+            (withdraw_amount as u64),
+            (collateral_amount as u64)
+        );
+
+        // verify if expected event was emitted
+        assert!(was_event_emitted(&withdraw_liquidity_event), 102);
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
+    public entry fun test_user_cannot_deposit_liquidity_if_pool_has_not_been_initialized(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // should fail
+        let deposit_amount = 1000;
+        prediction_market::deposit_liquidity(user_two, market_id, deposit_amount);
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
+    public entry fun test_user_cannot_withdraw_liquidity_if_pool_has_not_been_initialized(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // should fail
+        let withdraw_amount = 1000;
+        prediction_market::withdraw_liquidity(user_two, market_id, withdraw_amount);
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED, location = prediction_market)]
+    public entry fun test_user_cannot_initialize_pool_if_default_min_liquidity_required_is_not_reached(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // should fail
+        let initial_liquidity = (1 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
+    public entry fun test_user_cannot_buy_outcome_tokens_if_liquidity_pool_has_not_been_initialized(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // should fail
+        let buy_amount      = 1000;
+        let outcome_token   = b"one";
+        prediction_market::buy_outcome_tokens(user_one, market_id, outcome_token, buy_amount);
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
+    public entry fun test_user_cannot_sell_outcome_tokens_if_liquidity_pool_has_not_been_initialized(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // should fail
+        let sell_amount     = 1000;
+        let outcome_token   = b"one";
+        prediction_market::sell_outcome_tokens(user_one, market_id, outcome_token, sell_amount);
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_INVALID_OUTCOME, location = prediction_market)]
+    public entry fun test_user_cannot_buy_outcome_tokens_for_invalid_outcome(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+        // should fail
+        let buy_amount      = 1000;
+        let outcome_token   = b"wrongoutcome";
+        prediction_market::buy_outcome_tokens(user_one, market_id, outcome_token, buy_amount);
+
+    }
+
+
+    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[expected_failure(abort_code = ERROR_INVALID_OUTCOME, location = prediction_market)]
+    public entry fun test_user_cannot_sell_outcome_tokens_for_invalid_outcome(
+        aptos_framework: &signer,
+        prediction_market: &signer,
+        escalation_manager: &signer,
+        user_one: &signer,
+        user_two: &signer,
+        user_three: &signer,
+        treasury: &signer
+    )  {
+
+        // setup environment
+        let (_prediction_market_addr, user_one_addr, user_two_addr) = prediction_market::setup_test(aptos_framework, prediction_market, user_one, user_two);
+
+        // setup escalation manager
+        escalation_manager::setup_test(aptos_framework, escalation_manager, user_one, user_two);
+        
+        let block_assertion    = false;
+        let validate_asserters = false;
+        let validate_disputers = false;
+
+        // set assertion policy
+        escalation_manager::set_assertion_policy(
+            escalation_manager,
+            block_assertion,
+            validate_asserters,
+            validate_disputers
+        );
+
+        // setup oracle dapp token
+        oracle_token::setup_test(prediction_market);
+
+        // mint some tokens to user one (asserter), user two (disputer), and treasury
+        let mint_amount     = 100000000;
+        let treasury_addr   = signer::address_of(treasury);
+        let user_three_addr = signer::address_of(user_three);
+        oracle_token::mint(prediction_market, user_one_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_two_addr     , mint_amount);
+        oracle_token::mint(prediction_market, user_three_addr   , mint_amount);
+        oracle_token::mint(prediction_market, treasury_addr     , mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let treasury_addr           = treasury_addr;
+        let min_liveness            = DEFAULT_MIN_LIVENESS;
+        let default_fee             = DEFAULT_FEE;
+        let burned_bond_percentage  = DEFAULT_BURNED_BOND_PERCENTAGE;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            prediction_market,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            burned_bond_percentage
+        );
+
+        // ----------------------------------
+        // Initialize Market
+        // ----------------------------------
+
+        // init market params
+        let outcome_one             = b"Outcome One";
+        let outcome_two             = b"Outcome Two";
+        let description             = b"Test Initialize Market";
+        let image_url               = b"Image URL of Market";
+        let reward                  = 0; 
+        let required_bond           = 100_000;
+
+        // get next market id
+        let market_id = prediction_market::get_next_market_id();
+
+        // call initialize_market
+        prediction_market::initialize_market(
+            user_one,
+            outcome_one,
+            outcome_two,
+            description,
+            image_url,
+            reward,
+            required_bond
+        );
+
+        // ----------------------------------
+        // Initialize Liquidity Pool
+        // ----------------------------------
+
+        let initial_liquidity = (100_000 as u128);
+        prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
+
+        // should fail
+        let sell_amount      = 1000;
+        let outcome_token   = b"wrongoutcome";
+        prediction_market::sell_outcome_tokens(user_one, market_id, outcome_token, sell_amount);
+
+    }
+    
 }
