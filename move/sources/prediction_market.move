@@ -186,6 +186,8 @@ module optimistic_oracle_addr::prediction_market {
         burned_bond_percentage: u64,
         min_liveness: u64,
         treasury_address: address,
+        swap_fee_percent: u128,
+        min_liquidity_required: u128,
         currency_metadata: option::Option<Object<Metadata>>,
     }
 
@@ -365,6 +367,8 @@ module optimistic_oracle_addr::prediction_market {
             default_fee             : DEFAULT_FEE,
             burned_bond_percentage  : DEFAULT_BURNED_BOND_PERCENTAGE,
             treasury_address        : DEFAULT_TREASURY_ADDRESS,
+            swap_fee_percent        : DEFAULT_SWAP_FEE_PERCENT,
+            min_liquidity_required  : DEFAULT_MIN_LIQUIDITY_REQUIRED,
             currency_metadata       : option::none()
         });
 
@@ -397,6 +401,8 @@ module optimistic_oracle_addr::prediction_market {
         min_liveness: u64,
         default_fee: u64,
         treasury_address: address,
+        swap_fee_percent: u128,
+        min_liquidity_required: u128,
         burned_bond_percentage : u64
     ) acquires AdminProperties, AdminInfo {
 
@@ -417,6 +423,8 @@ module optimistic_oracle_addr::prediction_market {
         admin_properties.default_fee              = default_fee;
         admin_properties.burned_bond_percentage   = burned_bond_percentage;
         admin_properties.treasury_address         = treasury_address;
+        admin_properties.swap_fee_percent         = swap_fee_percent;
+        admin_properties.min_liquidity_required   = min_liquidity_required;
         admin_properties.currency_metadata        = option::some(currency_metadata);
 
     }
@@ -1038,7 +1046,7 @@ module optimistic_oracle_addr::prediction_market {
         smart_table::add(&mut liquidity_pools.pools, market_id, pool);
 
         // calculate if min liquidity reached
-        assert!(collateral_amount >= DEFAULT_MIN_LIQUIDITY_REQUIRED, ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED);
+        assert!(collateral_amount >= admin_properties.min_liquidity_required, ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED);
 
         // transfer currency collateral tokens (i.e. oracle tokens) from initializer to module
         let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
@@ -1219,7 +1227,7 @@ module optimistic_oracle_addr::prediction_market {
         let total_pool_reserves = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
 
         // calculate amount less fees (liquidity provider incentives)
-        let amount_less_fees = (amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
+        let amount_less_fees = (amount * (1000 - admin_properties.swap_fee_percent)) / 1000;
 
         let (token_metadata, token_reserve, token_address) = 
         if(outcome_token == b"one"){
@@ -1297,7 +1305,7 @@ module optimistic_oracle_addr::prediction_market {
         let total_pool_reserves = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
 
         // calculate amount less fees (liquidity provider incentives)
-        let amount_less_fees = (amount * (1000 - DEFAULT_SWAP_FEE_PERCENT)) / 1000;
+        let amount_less_fees = (amount * (1000 - admin_properties.swap_fee_percent)) / 1000;
 
         let (token_metadata, token_reserve, token_address) = 
         if(outcome_token == b"one"){
@@ -1749,7 +1757,7 @@ module optimistic_oracle_addr::prediction_market {
 
     #[view]
     public fun get_admin_properties(): (
-        u64, u64, u64, address, Object<Metadata>
+        u64, u64, u64, address, u128, u128, Object<Metadata>
     ) acquires AdminProperties {
 
         let oracle_signer_addr = get_oracle_signer_addr();
@@ -1761,6 +1769,8 @@ module optimistic_oracle_addr::prediction_market {
             admin_properties.burned_bond_percentage,
             admin_properties.min_liveness,
             admin_properties.treasury_address,
+            admin_properties.swap_fee_percent,
+            admin_properties.min_liquidity_required,
             option::destroy_some(admin_properties.currency_metadata)
         )
     }

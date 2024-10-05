@@ -219,16 +219,29 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
         // check views
-        let (prop_default_fee, prop_burned_bond_percentage, prop_min_liveness, prop_treasury_addr, prop_currency_metadata) = prediction_market::get_admin_properties();
-        assert!(prop_min_liveness             == min_liveness           , 100);
-        assert!(prop_default_fee              == default_fee            , 101);
-        assert!(prop_treasury_addr            == treasury_addr          , 102);
-        assert!(prop_burned_bond_percentage   == burned_bond_percentage , 103);
-        assert!(prop_currency_metadata        == oracle_token_metadata        , 104);
+        let (
+            prop_default_fee, 
+            prop_burned_bond_percentage, 
+            prop_min_liveness, 
+            prop_treasury_addr, 
+            prop_swap_fee_percent, 
+            prop_min_liquidity_required, 
+            prop_currency_metadata
+        ) = prediction_market::get_admin_properties();
+
+        assert!(prop_min_liveness             == min_liveness                   , 100);
+        assert!(prop_default_fee              == default_fee                    , 101);
+        assert!(prop_treasury_addr            == treasury_addr                  , 102);
+        assert!(prop_burned_bond_percentage   == burned_bond_percentage         , 103);
+        assert!(prop_swap_fee_percent         == DEFAULT_SWAP_FEE_PERCENT       , 104);
+        assert!(prop_min_liquidity_required   == DEFAULT_MIN_LIQUIDITY_REQUIRED , 105);
+        assert!(prop_currency_metadata        == oracle_token_metadata          , 106);
     }
 
 
@@ -260,6 +273,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
     }
@@ -293,6 +308,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
     }
@@ -326,6 +343,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
     }
@@ -687,6 +706,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -1156,6 +1177,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -1519,6 +1542,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -1826,6 +1851,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2171,6 +2198,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2263,6 +2292,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2348,6 +2379,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2434,6 +2467,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2527,6 +2562,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2635,6 +2672,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2745,6 +2784,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2859,6 +2900,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -2973,6 +3016,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -3246,6 +3291,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -3520,6 +3567,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -3794,6 +3843,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -4069,6 +4120,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -4168,6 +4221,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -4288,6 +4343,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -4399,6 +4456,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -4520,6 +4579,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -4615,6 +4676,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -4706,6 +4769,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -4971,6 +5036,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -5236,6 +5303,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -5382,6 +5451,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -5474,6 +5545,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -5566,6 +5639,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -5658,6 +5733,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -5751,6 +5828,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -5844,6 +5923,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
@@ -5944,6 +6025,8 @@ module optimistic_oracle_addr::prediction_market_test {
             min_liveness,
             default_fee,
             treasury_addr,
+            DEFAULT_SWAP_FEE_PERCENT,
+            DEFAULT_MIN_LIQUIDITY_REQUIRED,
             burned_bond_percentage
         );
 
