@@ -65,8 +65,28 @@ script {
 
         // mint some oracle tokens
         let mint_amount  = 1_000_000_000_000;
-        let creator_addr = signer::address_of(creator);
-        oracle_token::mint(creator, creator_addr, mint_amount);
+        oracle_token::public_mint(creator, mint_amount);
+
+        // setup admin properties
+        let oracle_token_metadata   = oracle_token::metadata();
+        let min_liveness            = 1000;
+        let default_fee             = 100;
+        let treasury_addr           = signer::address_of(creator);
+        let burned_bond_percentage  = 100;
+        let swap_fee_percent        = 0;
+        let min_liquidity_required  = 10_00;
+
+        // call set_admin_properties
+        prediction_market::set_admin_properties(
+            creator,
+            oracle_token_metadata,
+            min_liveness,
+            default_fee,
+            treasury_addr,
+            swap_fee_percent,
+            min_liquidity_required,
+            burned_bond_percentage
+        );
 
         let initial_liquidity = (100_000 as u128);
 
