@@ -387,11 +387,12 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // get market id
-        // let current_timestamp   = timestamp::now_microseconds();  
+        let current_timestamp   = timestamp::now_microseconds();  
         // let time_bytes          = bcs::to_bytes<u64>(&current_timestamp);
         // let market_id           = prediction_market::get_market_id(user_one_addr, time_bytes, description);
 
@@ -406,22 +407,27 @@ module optimistic_oracle_addr::prediction_market_test {
             view_outcome_two,
             view_description,
             view_image_url,
+            view_categories,
+            view_start_timestamp,
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             outcome_token_one_address,
             outcome_token_two_address
         ) = prediction_market::get_market(market_id);
 
-        assert!(creator             == user_one_addr        , 100);
-        assert!(resolved            == false                , 101);
-        assert!(asserted_outcome_id == vector::empty<u8>()  , 102);
-        assert!(reward              == reward               , 103);
-        assert!(required_bond       == required_bond        , 104);
+        assert!(creator              == user_one_addr        , 100);
+        assert!(resolved             == false                , 101);
+        assert!(asserted_outcome_id  == vector::empty<u8>()  , 102);
+        assert!(reward               == reward               , 103);
+        assert!(required_bond        == required_bond        , 104);
 
-        assert!(view_outcome_one    == outcome_one          , 105);
-        assert!(view_outcome_two    == outcome_two          , 106);
-        assert!(view_description    == description          , 107);
-        assert!(view_image_url      == image_url            , 108);
+        assert!(view_outcome_one     == outcome_one          , 105);
+        assert!(view_outcome_two     == outcome_two          , 106);
+        assert!(view_description     == description          , 107);
+        assert!(view_image_url       == image_url            , 108);
+
+        assert!(view_categories      == b""                  , 109);
+        assert!(view_start_timestamp == current_timestamp    , 110);
         
 
         // create instance of expected event
@@ -443,7 +449,7 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // verify if expected event was emitted
-        assert!(was_event_emitted(&market_initialized_event), 102);
+        assert!(was_event_emitted(&market_initialized_event), 111);
     }
 
     
@@ -482,7 +488,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
     }
 
@@ -522,7 +529,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
     }
 
@@ -562,7 +570,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
     }
 
@@ -602,7 +611,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
     }
 
@@ -641,7 +651,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // should fail 
@@ -652,7 +663,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
     }
 
@@ -737,7 +749,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // check that reward was transferred
@@ -791,6 +804,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -1205,7 +1220,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -1244,6 +1260,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -1424,6 +1442,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -1570,7 +1590,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -1609,6 +1630,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -1789,6 +1812,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -1882,7 +1907,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // check that reward was transferred
@@ -1917,6 +1943,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -2222,7 +2250,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -2316,7 +2345,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -2403,7 +2433,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -2491,7 +2522,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -2586,7 +2618,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -2696,7 +2729,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -2808,7 +2842,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -2924,7 +2959,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -3044,7 +3080,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -3219,6 +3256,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -3319,7 +3358,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -3494,6 +3534,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -3595,7 +3637,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -3770,6 +3813,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -3871,7 +3916,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -4046,6 +4092,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -4144,7 +4192,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -4245,7 +4294,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -4367,7 +4417,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -4480,7 +4531,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // init params for truth assertion
@@ -4603,7 +4655,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -4700,7 +4753,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -4797,7 +4851,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -4965,6 +5020,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -5064,7 +5121,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -5232,6 +5290,8 @@ module optimistic_oracle_addr::prediction_market_test {
             _view_outcome_two,
             _view_description,
             _view_image_url,
+            _view_categories,
+            _view_start_timestamp,
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
@@ -5331,7 +5391,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -5479,7 +5540,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // should fail
@@ -5573,7 +5635,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // should fail
@@ -5667,7 +5730,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // should fail
@@ -5761,7 +5825,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // should fail
@@ -5856,7 +5921,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // should fail
@@ -5951,7 +6017,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------
@@ -6053,7 +6120,8 @@ module optimistic_oracle_addr::prediction_market_test {
             description,
             image_url,
             reward,
-            required_bond
+            required_bond,
+            b""
         );
 
         // ----------------------------------

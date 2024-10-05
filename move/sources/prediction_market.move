@@ -110,6 +110,9 @@ module optimistic_oracle_addr::prediction_market {
         description: vector<u8>,             // Description of the market.
         image_url: vector<u8>,               // Description of the market.
 
+        categories: vector<u8>,             // comma-separated categories
+        start_timestamp: u64,               // timestamp of when market was created
+
         outcome_token_one_metadata: Object<Metadata>, // simple move token representing the value of the first outcome.
         outcome_token_two_metadata: Object<Metadata>, // simple move token representing the value of the second outcome.
 
@@ -440,7 +443,8 @@ module optimistic_oracle_addr::prediction_market {
         description: vector<u8>, // Description of the market.
         image_url: vector<u8>,   // Image of the market.
         reward: u64,             // Reward available for asserting true market outcome.
-        required_bond: u64       // Expected bond to assert market outcome (OOv3 can require higher bond).
+        required_bond: u64,      // Expected bond to assert market outcome (OOv3 can require higher bond).
+        categories: vector<u8>   // optional categories of market
     ) acquires Markets, MarketRegistry, OracleSigner, AdminProperties {
 
         let oracle_signer_addr  = get_oracle_signer_addr();
@@ -552,6 +556,9 @@ module optimistic_oracle_addr::prediction_market {
             outcome_two,            
             description,
             image_url,
+
+            categories,
+            start_timestamp: timestamp::now_microseconds(),
 
             outcome_token_one_metadata,
             outcome_token_two_metadata,
@@ -1835,7 +1842,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     // refactored to use u64 as market id
     public fun get_market(market_id: u64) : (
-        address, bool, vector<u8>, u64, u64, vector<u8>, vector<u8>, vector<u8>, vector<u8>, Object<Metadata>, Object<Metadata>, address, address
+        address, bool, vector<u8>, u64, u64, vector<u8>, vector<u8>, vector<u8>, vector<u8>, vector<u8>, u64, Object<Metadata>, Object<Metadata>, address, address
     ) acquires MarketRegistry, Markets {
 
         let oracle_signer_addr     = get_oracle_signer_addr();
@@ -1859,6 +1866,9 @@ module optimistic_oracle_addr::prediction_market {
             market.outcome_two,
             market.description,
             market.image_url,
+
+            market.categories,
+            market.start_timestamp,
 
             market.outcome_token_one_metadata,
             market.outcome_token_two_metadata,
