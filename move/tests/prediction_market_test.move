@@ -412,7 +412,9 @@ module optimistic_oracle_addr::prediction_market_test {
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             outcome_token_one_address,
-            outcome_token_two_address
+            outcome_token_two_address,
+            pool_initialized,
+            pool_initializer
         ) = prediction_market::get_market(market_id);
 
         assert!(creator              == user_one_addr        , 100);
@@ -428,6 +430,9 @@ module optimistic_oracle_addr::prediction_market_test {
 
         assert!(view_categories      == b""                  , 109);
         assert!(view_start_timestamp == current_timestamp    , 110);
+
+        assert!(pool_initialized     == false                , 111);
+        assert!(pool_initializer     == option::none()       , 112);
         
 
         // create instance of expected event
@@ -449,7 +454,7 @@ module optimistic_oracle_addr::prediction_market_test {
         );
 
         // verify if expected event was emitted
-        assert!(was_event_emitted(&market_initialized_event), 111);
+        assert!(was_event_emitted(&market_initialized_event), 113);
     }
 
     
@@ -809,7 +814,9 @@ module optimistic_oracle_addr::prediction_market_test {
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // ----------------------------------
@@ -1265,7 +1272,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
         assert!(view_asserted_outcome_id == aptos_hash::keccak256(asserted_outcome), 100);
 
@@ -1447,7 +1456,9 @@ module optimistic_oracle_addr::prediction_market_test {
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // market is now resolved and asserted outcome id is reset 
@@ -1635,7 +1646,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
         assert!(view_asserted_outcome_id == aptos_hash::keccak256(asserted_outcome), 100);
 
@@ -1817,7 +1830,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // market is now resolved and asserted outcome id is reset 
@@ -1948,7 +1963,9 @@ module optimistic_oracle_addr::prediction_market_test {
             outcome_token_one_metadata,
             outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
         assert!(view_asserted_outcome_id == aptos_hash::keccak256(asserted_outcome), 100);
 
@@ -3261,7 +3278,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // market is now resolved and asserted outcome id is reset 
@@ -3539,7 +3558,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // market is now resolved and asserted outcome id is reset 
@@ -3818,7 +3839,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // market is now resolved and asserted outcome id is reset 
@@ -4097,7 +4120,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // market is now resolved and asserted outcome id is reset 
@@ -5025,7 +5050,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // market is now resolved and asserted outcome id is reset 
@@ -5295,7 +5322,9 @@ module optimistic_oracle_addr::prediction_market_test {
             _outcome_token_one_metadata,
             _outcome_token_two_metadata,
             _outcome_token_one_address,
-            _outcome_token_two_address
+            _outcome_token_two_address,
+            _pool_initialized,
+            _pool_initializer
         ) = prediction_market::get_market(market_id);
 
         // market is now resolved and asserted outcome id is reset 
