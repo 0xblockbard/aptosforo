@@ -7,9 +7,9 @@ module aptosforo_addr::prediction_market {
     use aptosforo_addr::escalation_manager;
 
     use std::bcs;
-    use std::signer;
     use std::event;
     use std::vector;
+    use std::signer;
     use std::timestamp; 
     use std::string::{utf8};
     use std::option::{Self, Option};

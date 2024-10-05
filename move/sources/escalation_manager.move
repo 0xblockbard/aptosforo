@@ -4,8 +4,8 @@
 //
 module aptosforo_addr::escalation_manager {
 
-    use std::signer;
     use std::event;
+    use std::signer;
     use std::vector;
     
     use aptos_std::aptos_hash;
