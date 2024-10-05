@@ -1,7 +1,7 @@
 #[test_only]
-module optimistic_oracle_addr::escalation_manager_test {
+module aptosforo_addr::escalation_manager_test {
 
-    use optimistic_oracle_addr::escalation_manager;
+    use aptosforo_addr::escalation_manager;
 
     use std::bcs;
     

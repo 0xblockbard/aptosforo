@@ -2,9 +2,9 @@
 * Extension of optimistic oracle for prediction markets
 */
 
-module optimistic_oracle_addr::prediction_market {
+module aptosforo_addr::prediction_market {
 
-    use optimistic_oracle_addr::escalation_manager;
+    use aptosforo_addr::escalation_manager;
 
     use std::bcs;
     use std::signer;
@@ -76,7 +76,7 @@ module optimistic_oracle_addr::prediction_market {
     const DEFAULT_FEE: u64                            = 1000;
     const DEFAULT_SWAP_FEE_PERCENT: u128              = 2;    // 0.02%
     const DEFAULT_BURNED_BOND_PERCENTAGE: u64         = 1000;
-    const DEFAULT_TREASURY_ADDRESS: address           = @optimistic_oracle_addr;
+    const DEFAULT_TREASURY_ADDRESS: address           = @aptosforo_addr;
     const DEFAULT_IDENTIFIER: vector<u8>              = b"YES/NO";        // Identifier used for all prediction markets.
     const UNRESOLVABLE: vector<u8>                    = b"Unresolvable";  // Name of the unresolvable outcome where payouts are split.
 
@@ -1994,7 +1994,7 @@ module optimistic_oracle_addr::prediction_market {
     // -----------------------------------
 
     fun get_oracle_signer_addr(): address {
-        object::create_object_address(&@optimistic_oracle_addr, APP_OBJECT_SEED)
+        object::create_object_address(&@aptosforo_addr, APP_OBJECT_SEED)
     }
 
     fun get_oracle_signer(oracle_signer_addr: address): signer acquires OracleSigner {

@@ -4,9 +4,9 @@
 // By: 0xblockbard
 //
 
-module optimistic_oracle_addr::optimistic_oracle {
+module aptosforo_addr::optimistic_oracle {
 
-    use optimistic_oracle_addr::escalation_manager;
+    use aptosforo_addr::escalation_manager;
 
     use std::bcs;
     use std::event;
@@ -55,7 +55,7 @@ module optimistic_oracle_addr::optimistic_oracle {
     const DEFAULT_MIN_LIVENESS: u64             = 10000;
     const DEFAULT_FEE: u64                      = 1000;
     const DEFAULT_BURNED_BOND_PERCENTAGE: u64   = 1000;
-    const DEFAULT_TREASURY_ADDRESS: address     = @optimistic_oracle_addr;
+    const DEFAULT_TREASURY_ADDRESS: address     = @aptosforo_addr;
     
     // -----------------------------------
     // Structs
@@ -582,7 +582,7 @@ module optimistic_oracle_addr::optimistic_oracle {
     // -----------------------------------
 
     fun get_oracle_signer_addr(): address {
-        object::create_object_address(&@optimistic_oracle_addr, APP_OBJECT_SEED)
+        object::create_object_address(&@aptosforo_addr, APP_OBJECT_SEED)
     }
 
     fun get_oracle_signer(oracle_signer_addr: address): signer acquires OracleSigner {
@@ -609,16 +609,16 @@ module optimistic_oracle_addr::optimistic_oracle {
         timestamp::set_time_has_started_for_testing(aptos_framework);
 
         // get addresses
-        let optimistic_oracle_addr   = signer::address_of(optimistic_oracle);
-        let user_one_addr            = signer::address_of(user_one);
-        let user_two_addr            = signer::address_of(user_two);
+        let aptosforo_addr   = signer::address_of(optimistic_oracle);
+        let user_one_addr    = signer::address_of(user_one);
+        let user_two_addr    = signer::address_of(user_two);
 
         // create accounts
-        account::create_account_for_test(optimistic_oracle_addr);
+        account::create_account_for_test(aptosforo_addr);
         account::create_account_for_test(user_one_addr);
         account::create_account_for_test(user_two_addr);
 
-        (optimistic_oracle_addr, user_one_addr, user_two_addr)
+        (aptosforo_addr, user_one_addr, user_two_addr)
     }
 
 

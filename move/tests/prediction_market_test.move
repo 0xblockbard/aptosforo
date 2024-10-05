@@ -1,9 +1,9 @@
 #[test_only]
-module optimistic_oracle_addr::prediction_market_test {
+module aptosforo_addr::prediction_market_test {
 
-    use optimistic_oracle_addr::escalation_manager;
-    use optimistic_oracle_addr::prediction_market;
-    use optimistic_oracle_addr::oracle_token;
+    use aptosforo_addr::escalation_manager;
+    use aptosforo_addr::prediction_market;
+    use aptosforo_addr::oracle_token;
 
     use std::bcs;
     use std::signer;
@@ -70,7 +70,7 @@ module optimistic_oracle_addr::prediction_market_test {
     const DEFAULT_FEE: u64                            = 1000;
     const DEFAULT_SWAP_FEE_PERCENT: u128              = 2;    // 0.02%
     const DEFAULT_BURNED_BOND_PERCENTAGE: u64         = 1000;
-    const DEFAULT_TREASURY_ADDRESS: address           = @optimistic_oracle_addr;
+    const DEFAULT_TREASURY_ADDRESS: address           = @aptosforo_addr;
     const DEFAULT_IDENTIFIER: vector<u8>              = b"YES/NO";        // Identifier used for all prediction markets.
     const UNRESOLVABLE: vector<u8>                    = b"Unresolvable";  // Name of the unresolvable outcome where payouts are split.
 
@@ -192,7 +192,7 @@ module optimistic_oracle_addr::prediction_market_test {
     // Unit Tests
     // -----------------------------------
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     public entry fun test_admin_can_set_admin_properties(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -245,7 +245,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_NOT_ADMIN, location = prediction_market)]
     public entry fun test_non_admin_cannot_set_admin_properties(
         aptos_framework: &signer,
@@ -280,7 +280,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
     
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_BURNED_BOND_PERCENTAGE_EXCEEDS_HUNDRED, location = prediction_market)]
     public entry fun test_set_admin_properties_burned_bond_percentage_cannot_exceed_hundred(
         aptos_framework: &signer,
@@ -315,7 +315,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_BURNED_BOND_PERCENTAGE_IS_ZERO, location = prediction_market)]
     public entry fun test_set_admin_properties_burned_bond_percentage_cannot_be_zero(
         aptos_framework: &signer,
@@ -350,7 +350,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     public entry fun test_anyone_can_initialize_a_new_market(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -458,7 +458,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
     
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_EMPTY_FIRST_OUTCOME, location = prediction_market)]
     public entry fun test_outcome_one_cannot_be_empty_to_initialize_market(
         aptos_framework: &signer,
@@ -499,7 +499,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_EMPTY_SECOND_OUTCOME, location = prediction_market)]
     public entry fun test_outcome_two_cannot_be_empty_to_initialize_market(
         aptos_framework: &signer,
@@ -540,7 +540,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_OUTCOMES_ARE_THE_SAME, location = prediction_market)]
     public entry fun test_outcome_two_cannot_be_equal_to_outcome_one_to_initialize_market(
         aptos_framework: &signer,
@@ -581,7 +581,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_EMPTY_DESCRIPTION, location = prediction_market)]
     public entry fun test_description_cannot_be_empty_to_initialize_market(
         aptos_framework: &signer,
@@ -622,7 +622,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, user_one = @0x333, user_two = @0x444)]
     public entry fun test_identical_market_can_be_initialized_again_since_we_go_by_market_id(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -674,7 +674,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     public entry fun test_assert_market_end_to_end_without_dispute(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -1144,7 +1144,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     public entry fun test_assert_truth_end_to_end_with_dispute_and_asserter_wins(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -1518,7 +1518,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     public entry fun test_assert_truth_end_to_end_with_dispute_and_disputer_wins(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -1842,7 +1842,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     public entry fun test_assert_market_with_unresolved_outcome_end_to_end_without_dispute(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -2194,7 +2194,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_NOT_WHITELISTED_ASSERTER, location = prediction_market)]
     public entry fun test_non_whitelisted_asserters_cannot_call_assert_truth_if_validate_asserters_is_true(
         aptos_framework: &signer,
@@ -2283,7 +2283,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     public entry fun test_only_whitelisted_asserters_can_call_assert_truth_if_validate_asserters_is_true(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -2377,7 +2377,7 @@ module optimistic_oracle_addr::prediction_market_test {
         );
     }
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_ASSERT_IS_BLOCKED, location = prediction_market)]
     public entry fun test_user_cannot_assert_truth_if_block_assertion_is_true(
         aptos_framework: &signer,
@@ -2466,7 +2466,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_ASSERTION_ACTIVE_OR_RESOLVED, location = prediction_market)]
     public entry fun test_user_cannot_assert_truth_if_the_same_assertion_already_exists(
         aptos_framework: &signer,
@@ -2562,7 +2562,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_NOT_WHITELISTED_DISPUTER, location = prediction_market)]
     public entry fun test_non_whitelisted_disputers_cannot_dispute_assertions_if_validate_disputers_is_true(
         aptos_framework: &signer,
@@ -2666,7 +2666,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     public entry fun test_only_whitelisted_disputers_can_dispute_assertions_if_validate_disputers_is_true(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -2778,7 +2778,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_ASSERTION_IS_EXPIRED, location = prediction_market)]
     public entry fun test_dispute_assertion_cannot_be_called_after_assertion_has_expired(
         aptos_framework: &signer,
@@ -2895,7 +2895,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_ASSERTION_ALREADY_DISPUTED, location = prediction_market)]
     public entry fun test_assertion_cannot_be_disputed_more_than_once(
         aptos_framework: &signer,
@@ -3013,7 +3013,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
     public entry fun test_cannot_deposit_liquidity_to_pool_for_resolved_market(
         aptos_framework: &signer,
@@ -3293,7 +3293,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
     public entry fun test_cannot_buy_outcome_tokens_after_market_resolved(
         aptos_framework: &signer,
@@ -3574,7 +3574,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
     public entry fun test_cannot_sell_outcome_tokens_after_market_resolved(
         aptos_framework: &signer,
@@ -3855,7 +3855,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
     public entry fun test_cannot_initialize_pool_for_resolved_market(
         aptos_framework: &signer,
@@ -4136,7 +4136,7 @@ module optimistic_oracle_addr::prediction_market_test {
 
     
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure]
     public entry fun test_cannot_assert_market_with_invalid_outcome(
         aptos_framework: &signer,
@@ -4238,7 +4238,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_MARKET_HAS_NOT_BEEN_RESOLVED, location = prediction_market)]
     public entry fun test_cannot_settle_outcome_tokens_before_market_has_been_resolved(
         aptos_framework: &signer,
@@ -4361,7 +4361,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_ASSERTION_NOT_EXPIRED, location = prediction_market)]
     public entry fun test_cannot_settle_assertion_before_expiration(
         aptos_framework: &signer,
@@ -4475,7 +4475,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_ASSERTION_ALREADY_SETTLED, location = prediction_market)]
     public entry fun test_cannot_settle_assertion_more_than_once(
         aptos_framework: &signer,
@@ -4599,7 +4599,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
     
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_POOL_ALREADY_INITIALIZED, location = prediction_market)]
     public entry fun test_cannot_initialize_pool_for_market_more_than_once(
         aptos_framework: &signer,
@@ -4697,7 +4697,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444)]
     #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
     public entry fun test_cannot_redeem_lp_tokens_for_outcome_tokens_if_pool_is_not_initialized(
         aptos_framework: &signer,
@@ -4792,7 +4792,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
     public entry fun test_cannot_settle_outcome_tokens_for_resolved_market_if_pool_has_not_been_initialized(
         aptos_framework: &signer,
@@ -5064,7 +5064,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_MARKET_HAS_BEEN_RESOLVED, location = prediction_market)]
     public entry fun test_cannot_withdraw_liqudity_after_market_has_been_resolved(
         aptos_framework: &signer,
@@ -5337,7 +5337,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
    
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     public entry fun test_user_can_withdraw_liquidity(
         aptos_framework: &signer,
         prediction_market: &signer,
@@ -5485,7 +5485,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
     public entry fun test_user_cannot_deposit_liquidity_if_pool_has_not_been_initialized(
         aptos_framework: &signer,
@@ -5580,7 +5580,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
     public entry fun test_user_cannot_withdraw_liquidity_if_pool_has_not_been_initialized(
         aptos_framework: &signer,
@@ -5675,7 +5675,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED, location = prediction_market)]
     public entry fun test_user_cannot_initialize_pool_if_default_min_liquidity_required_is_not_reached(
         aptos_framework: &signer,
@@ -5770,7 +5770,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
     public entry fun test_user_cannot_buy_outcome_tokens_if_liquidity_pool_has_not_been_initialized(
         aptos_framework: &signer,
@@ -5866,7 +5866,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_POOL_NOT_INITIALIZED, location = prediction_market)]
     public entry fun test_user_cannot_sell_outcome_tokens_if_liquidity_pool_has_not_been_initialized(
         aptos_framework: &signer,
@@ -5962,7 +5962,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_INVALID_OUTCOME, location = prediction_market)]
     public entry fun test_user_cannot_buy_outcome_tokens_for_invalid_outcome(
         aptos_framework: &signer,
@@ -6065,7 +6065,7 @@ module optimistic_oracle_addr::prediction_market_test {
     }
 
 
-    #[test(aptos_framework = @0x1, prediction_market=@optimistic_oracle_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
+    #[test(aptos_framework = @0x1, prediction_market=@aptosforo_addr, escalation_manager=@escalation_manager_addr, user_one = @0x333, user_two = @0x444, user_three = @0x555, treasury = @0x666)]
     #[expected_failure(abort_code = ERROR_INVALID_OUTCOME, location = prediction_market)]
     public entry fun test_user_cannot_sell_outcome_tokens_for_invalid_outcome(
         aptos_framework: &signer,

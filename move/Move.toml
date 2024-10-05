@@ -4,15 +4,15 @@ version = "1.0.0"
 authors = []
 
 [addresses]
-# escalation_manager_addr = "0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d"
-# optimistic_oracle_addr = '0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d'
-# treasury_addr = '0xa0980e2efd99261b8769d684b5eaf36aa31fef5b6bdbe65f0eac087168abf71d'
-optimistic_oracle_addr  = '_'
+# escalation_manager_addr = "0x8e437302ac994687818a81c59a2ac8c1b04732ed8cb8a732c03aeed2e6b4c791"
+# aptosforo_addr          = '0x8e437302ac994687818a81c59a2ac8c1b04732ed8cb8a732c03aeed2e6b4c791'
+# treasury_addr           = '0x8e437302ac994687818a81c59a2ac8c1b04732ed8cb8a732c03aeed2e6b4c791'
+aptosforo_addr  = '_'
 escalation_manager_addr = '_'
 treasury_addr           = '_'
 
 [dev-addresses]
-optimistic_oracle_addr  = '0x111'
+aptosforo_addr          = '0x111'
 escalation_manager_addr = '0x222'
 treasury_addr           = '0x333'
 

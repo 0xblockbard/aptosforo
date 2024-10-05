@@ -2,7 +2,7 @@
 // Based on the Full Policy Escalation Manager on UMA Protocol
 // By: 0xblockbard
 //
-module optimistic_oracle_addr::escalation_manager {
+module aptosforo_addr::escalation_manager {
 
     use std::signer;
     use std::event;

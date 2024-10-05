@@ -3,8 +3,8 @@ script {
     use std::vector;
     use std::signer;
 
-    use optimistic_oracle_addr::prediction_market;
-    use optimistic_oracle_addr::oracle_token;
+    use aptosforo_addr::prediction_market;
+    use aptosforo_addr::oracle_token;
 
     fun setup_dummy_data_crypto_category(creator: &signer) {
 
