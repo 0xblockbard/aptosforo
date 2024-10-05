@@ -1,13 +1,14 @@
 //
-// Based on the Full Policy Escalation Manager in UMA
+// Based on the Full Policy Escalation Manager on UMA Protocol
+// By: 0xblockbard
 //
 module optimistic_oracle_addr::escalation_manager {
 
     use std::signer;
     use std::event;
     use std::vector;
+    
     use aptos_std::aptos_hash;
-
     use aptos_std::smart_table::{Self, SmartTable};
 
     use aptos_framework::object;

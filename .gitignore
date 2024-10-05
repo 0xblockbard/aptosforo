@@ -2,6 +2,9 @@
 .aptos
 .env
 move/build
+move/.trace
+move/.coverage_map.mvcov
+move/script.mv
 
 # Logs
 logs
