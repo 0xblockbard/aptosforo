@@ -1005,8 +1005,8 @@ module optimistic_oracle_addr::prediction_market {
         market.pool_initializer = option::some(initializer_addr);
         market.pool_initialized = true;
 
-        // create LP Token
-        let lp_token_symbol: vector<u8> = b"LP Token";
+        // create unique LP Token based on market id
+        let lp_token_symbol: vector<u8> = bcs::to_bytes<u64>(&market_id);
         let lp_token_constructor_ref = object::create_named_object(&oracle_signer, lp_token_symbol);
         primary_fungible_store::create_primary_store_enabled_fungible_asset(
             &lp_token_constructor_ref,
@@ -1020,8 +1020,6 @@ module optimistic_oracle_addr::prediction_market {
         let lp_token_metadata_signer = object::generate_signer(&lp_token_constructor_ref);
 
         // For LP Token
-        // let mint_ref     = fungible_asset::generate_mint_ref(&lp_token_constructor_ref);
-        // let transfer_ref = fungible_asset::generate_transfer_ref(&lp_token_constructor_ref);
         move_to(&lp_token_metadata_signer,
             Management {
                 extend_ref: object::generate_extend_ref(&lp_token_constructor_ref),
@@ -1842,7 +1840,7 @@ module optimistic_oracle_addr::prediction_market {
     #[view]
     // refactored to use u64 as market id
     public fun get_market(market_id: u64) : (
-        address, bool, vector<u8>, u64, u64, vector<u8>, vector<u8>, vector<u8>, vector<u8>, vector<u8>, u64, Object<Metadata>, Object<Metadata>, address, address
+        address, bool, vector<u8>, u64, u64, vector<u8>, vector<u8>, vector<u8>, vector<u8>, vector<u8>, u64, Object<Metadata>, Object<Metadata>, address, address, bool, Option<address>
     ) acquires MarketRegistry, Markets {
 
         let oracle_signer_addr     = get_oracle_signer_addr();
@@ -1875,6 +1873,9 @@ module optimistic_oracle_addr::prediction_market {
             
             market.outcome_token_one_address,
             market.outcome_token_two_address,
+
+            market.pool_initialized,
+            market.pool_initializer,
         )
     }
 
