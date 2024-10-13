@@ -64,7 +64,7 @@ script {
         ];
 
         // mint some oracle tokens
-        let mint_amount  = 1_000_000_000_000;
+        let mint_amount  = 1000_000_000_000_000;
         oracle_token::public_mint(creator, mint_amount);
 
         // setup admin properties
@@ -88,7 +88,7 @@ script {
             burned_bond_percentage
         );
 
-        let initial_liquidity = (100_000 as u128);
+        let initial_liquidity = (100_00_000_000 as u128);
 
         let i = 0;
         let len = vector::length(&description_bytes_list);

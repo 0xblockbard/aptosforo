@@ -6161,7 +6161,7 @@ module aptosforo_addr::prediction_market_test {
         prediction_market::initialize_pool(user_one, market_id, initial_liquidity);
 
         // should fail
-        let sell_amount      = 1000;
+        let sell_amount     = 1000;
         let outcome_token   = b"wrongoutcome";
         prediction_market::sell_outcome_tokens(user_one, market_id, outcome_token, sell_amount);
 

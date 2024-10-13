@@ -712,7 +712,7 @@ module aptosforo_addr::prediction_market {
         };
 
         // set defaults
-        let liveness   = DEFAULT_MIN_LIVENESS;
+        let liveness   = admin_properties.min_liveness;
         let identifier = DEFAULT_IDENTIFIER;
 
         // refactor assertion id to u64 for convenience to fetch on frontend
@@ -906,9 +906,11 @@ module aptosforo_addr::prediction_market {
             let bond_recipient;
             let settlement_resolution = false;
             if(resolution == NUMERICAL_TRUE){
-                bond_recipient = assertion.asserter;
+                // resolution in favour of asserter
+                bond_recipient        = assertion.asserter;
                 settlement_resolution = true;
             } else {
+                // resolution in favour of disputer
                 bond_recipient = option::destroy_some(assertion.disputer);
             };
 
@@ -1005,6 +1007,9 @@ module aptosforo_addr::prediction_market {
         market.pool_initializer = option::some(initializer_addr);
         market.pool_initialized = true;
 
+        // calculate if min liquidity reached
+        assert!(collateral_amount >= admin_properties.min_liquidity_required, ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED);
+
         // create unique LP Token based on market id
         let lp_token_symbol: vector<u8> = bcs::to_bytes<u64>(&market_id);
         let lp_token_constructor_ref = object::create_named_object(&oracle_signer, lp_token_symbol);
@@ -1049,9 +1054,6 @@ module aptosforo_addr::prediction_market {
 
         // update liquidity pools
         smart_table::add(&mut liquidity_pools.pools, market_id, pool);
-
-        // calculate if min liquidity reached
-        assert!(collateral_amount >= admin_properties.min_liquidity_required, ERROR_DEFAULT_MIN_LIQUIDITY_NOT_REACHED);
 
         // transfer currency collateral tokens (i.e. oracle tokens) from initializer to module
         let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
@@ -1221,12 +1223,13 @@ module aptosforo_addr::prediction_market {
 
         // check that the pool has been initialized already
         assert!(market.pool_initialized == true, ERROR_POOL_NOT_INITIALIZED);
+
+        // check that outcome token input is valid
+        assert!(outcome_token == b"one" || outcome_token == b"two", ERROR_INVALID_OUTCOME);
         
         let initializer_addr    = option::destroy_some(market.pool_initializer);
         let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
         let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
-
-        assert!(outcome_token == b"one" || outcome_token == b"two", ERROR_INVALID_OUTCOME);
 
         // get total pool reserves
         let total_pool_reserves = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;
@@ -1299,12 +1302,13 @@ module aptosforo_addr::prediction_market {
 
         // check that the pool has been initialized already
         assert!(market.pool_initialized == true, ERROR_POOL_NOT_INITIALIZED);
+
+        // check that outcome token input is valid
+        assert!(outcome_token == b"one" || outcome_token == b"two", ERROR_INVALID_OUTCOME);
         
         let initializer_addr    = option::destroy_some(market.pool_initializer);
         let liquidity_pools     = borrow_global_mut<LiquidityPools>(initializer_addr);
         let liquidity_pool      = smart_table::borrow_mut(&mut liquidity_pools.pools, market_id);
-
-        assert!(outcome_token == b"one" || outcome_token == b"two", ERROR_INVALID_OUTCOME);
 
         // get total pool reserves
         let total_pool_reserves = liquidity_pool.outcome_token_one_reserve + liquidity_pool.outcome_token_two_reserve;

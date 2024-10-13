@@ -4,9 +4,9 @@ version = "1.0.0"
 authors = []
 
 [addresses]
-# escalation_manager_addr = "0x8e437302ac994687818a81c59a2ac8c1b04732ed8cb8a732c03aeed2e6b4c791"
-# aptosforo_addr          = '0x8e437302ac994687818a81c59a2ac8c1b04732ed8cb8a732c03aeed2e6b4c791'
-# treasury_addr           = '0x8e437302ac994687818a81c59a2ac8c1b04732ed8cb8a732c03aeed2e6b4c791'
+# escalation_manager_addr = "0xe1c93f55211a61e0395c0d3fee3c8fd30ec36cc0ec49bd1d6a727cbb3c1704a8"
+# aptosforo_addr          = '0xe1c93f55211a61e0395c0d3fee3c8fd30ec36cc0ec49bd1d6a727cbb3c1704a8'
+# treasury_addr           = '0xe1c93f55211a61e0395c0d3fee3c8fd30ec36cc0ec49bd1d6a727cbb3c1704a8'
 aptosforo_addr  = '_'
 escalation_manager_addr = '_'
 treasury_addr           = '_'
