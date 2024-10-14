@@ -160,25 +160,27 @@ The AptosForo prediction market module includes eleven public entrypoints and on
    - **Input**: Verifies that the signer is the admin and that the burned_bond_percentage is greater than 0 and less than 10000 (100%)
    - **Output**: Updates the AptosForo module admin properties
 
- <br />
-The AptosForo escalation manager module includes four admin entrypoints:
- <br />
+<br />
+
+The AptosForo Escalation Manager module includes four admin entrypoints:
+ 
+<br />
 
 **Escalation Manager Admin Entrypoints**
 
-1. **set_assertion_policy**: Allows the escalation manager admin to set the assertion policy that the prediction market module will follow  
+1. **set_assertion_policy**: Allows the Escalation Manager admin to set the assertion policy that the prediction market module will follow  
    - **Input**: Verifies that the signer is the admin and new boolean policy values (block_assertion, validate_asserters, validate_disputers)
-   - **Output**: Updates the escalation manager assertion policy
+   - **Output**: Updates the Escalation Manager assertion policy
 
-2. **set_whitelisted_asserter**: Allows the escalation manager admin to set a whitelisted asserter with a given boolean representing the whitelisted asserter’s permission
+2. **set_whitelisted_asserter**: Allows the Escalation Manager admin to set a whitelisted asserter with a given boolean representing the whitelisted asserter’s permission
    - **Input**: Verifies that the signer is the admin
    - **Output**: Sets whitelisted asserter
 
-3. **set_whitelisted_dispute_caller**: Allows the escalation manager admin to set a whitelisted disputer with a given boolean representing the whitelisted disputer’s permission
+3. **set_whitelisted_dispute_caller**: Allows the Escalation Manager admin to set a whitelisted disputer with a given boolean representing the whitelisted disputer’s permission
    - **Input**: Verifies that the signer is the admin
    - **Output**: Sets whitelisted disputer
 
-4. **set_arbitration_resolution**: Allows the escalation manager admin to resolve a market assertion outcome in the event of a dispute. This function has been customized to allow for an override for greater control and flexibility.
+4. **set_arbitration_resolution**: Allows the Escalation Manager admin to resolve a market assertion outcome in the event of a dispute. This function has been customized to allow for an override for greater control and flexibility.
    - **Input**: Verifies that the signer is the admin and derives the resolution request based on the assertion’s timestamp, market identifier, and ancillary data
    - **Output**: Sets an arbitration resolution
 
