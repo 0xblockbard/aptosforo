@@ -2,7 +2,7 @@
 
 ***Decentralised Prediction Market built on Optimistic Oracles***
 
-AptosForo (derived from "Aptos" and "Foro," Latin for "market") is an innovative prediction market that lets you trade on a diverse range of highly debated topics, from current events and politics to cryptocurrency trends. 
+AptosForo (derived from "Aptos" and "Foro," Latin for "market") is a full-fledged decentralised prediction market that lets you trade on a diverse range of highly debated topics, from current events and politics to cryptocurrency trends. 
 
 As prediction markets gain popularity, they appeal to individuals who seek to leverage their insights and capitalise on their understanding of future events. 
 
