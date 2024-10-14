@@ -668,7 +668,8 @@ module aptosforo_addr::prediction_market {
     }
 
 
-    /**
+    /** 
+     * With Reference from UMA Protocol:
      * @notice Asserts a truth about the world, using a custom configuration.
      * @dev The caller must approve this contract to spend at least bond amount of currency.
      * @param claim the truth claim being asserted. This is an assertion about the world, and is verified by disputers.
@@ -719,32 +720,6 @@ module aptosforo_addr::prediction_market {
         let assertion_id = assertion_registry.next_assertion_id;
          assertion_registry.next_assertion_id =  assertion_registry.next_assertion_id + 1;
         
-        // note: some old mechanics from previous optimistic oracle implementation for reference
-        // --------------------------------------------------------------------
-        // - refactored to use next_assertion_id instead
-        // set unique assertion id based on input
-        // let current_timestamp = timestamp::now_microseconds();
-        // let assertion_id = get_assertion_id(
-        //     asserter_addr,
-        //     claim, 
-        //     current_timestamp,
-        //     bond,
-        //     liveness,
-        //     identifier
-        // );
-
-        // verify assertion does not exist - not needed anymore as we have ERROR_ASSERTION_ACTIVE_OR_RESOLVED
-        // if (smart_table::contains(&assertions_table.assertions, assertion_id)) {
-        //     abort ERROR_ASSERTION_ALREADY_EXISTS
-        // };
-
-        // verify bond is greater than minimum bond - not needed anymore as minimum bond is set in assert_market
-        // let minimum_bond = (admin_properties.default_fee * 10000) / admin_properties.burned_bond_percentage;
-        // assert!(bond >= minimum_bond, ERROR_MINIMUM_BOND_NOT_REACHED);
-
-        // verify liveness is greater than minimum liveness - not needed anymore as default min liveness is used
-        // assert!(liveness >= admin_properties.min_liveness, ERROR_MINIMUM_LIVENESS_NOT_REACHED);
-
         let current_timestamp = timestamp::now_microseconds();
         let expiration_time = current_timestamp + liveness;
 
@@ -788,6 +763,7 @@ module aptosforo_addr::prediction_market {
 
 
     /**
+     * With Reference from UMA Protocol:
      * @notice Disputes an assertion. We follow a centralised model for dispute resolution where only whitelisted 
      * disputers can resolve the dispute.
      * @param assertionId unique identifier for the assertion to dispute.
@@ -841,6 +817,7 @@ module aptosforo_addr::prediction_market {
 
 
     /**
+     * With Reference from UMA Protocol:
      * @notice Resolves an assertion. If the assertion has not been disputed, the assertion is resolved as true and the
      * asserter receives the bond. If the assertion has been disputed, the assertion is resolved depending on the
      * result. Based on the result, the asserter or disputer receives the bond. If the assertion was disputed then an
@@ -1573,192 +1550,6 @@ module aptosforo_addr::prediction_market {
             outcome_two_tokens: token_two_burn_amount
         });
     }
-    
-    
-    //
-    // 
-    //  Reference: Original outcome token mechanics from UMA Protocol Optimistic Oracle Prediction Market
-    // 
-    // 
-
-    // Mints pair of tokens representing the value of outcome1 and outcome2. Trading of outcome tokens is outside of the
-    // scope of this contract. 
-    // public entry fun create_outcome_tokens(
-    //     minter: &signer,
-    //     market_id: u64, 
-    //     tokens_to_create: u64
-    // ) acquires Markets, MarketRegistry, Management, AdminProperties {
-
-    //     let oracle_signer_addr     = get_oracle_signer_addr();
-    //     let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
-    //     let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
-    //     let minter_addr            = signer::address_of(minter);
-
-    //     // get creator address from registry (and verify that market exists)
-    //     let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
-        
-    //     // get creator markets
-    //     let markets                = borrow_global_mut<Markets>(creator_address);
-
-    //     // find market by id
-    //     let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
-
-    //     // verify market has not been resolved
-    //     assert!(market.resolved == false, ERROR_MARKET_HAS_BEEN_RESOLVED);
-
-    //     // transfer currency tokens (i.e. oracle tokens) from minter to module
-    //     let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
-    //     primary_fungible_store::transfer(minter, currency_metadata, oracle_signer_addr, tokens_to_create);
-
-    //     // Get the management resource for the outcome one token
-    //     let token_one_mint_ref     = &borrow_global<Management>(market.outcome_token_one_address).mint_ref;
-    //     let token_one_transfer_ref = &borrow_global<Management>(market.outcome_token_one_address).transfer_ref;
-    //     let token_one_metadata     = market.outcome_token_one_metadata;
-
-    //     // Mint outcome token one
-    //     let minter_token_one_wallet = primary_fungible_store::ensure_primary_store_exists(minter_addr, token_one_metadata);
-    //     let fa = fungible_asset::mint(token_one_mint_ref, tokens_to_create);
-    //     fungible_asset::deposit_with_ref(token_one_transfer_ref, minter_token_one_wallet, fa);
-
-    //     // Get the management resource for the outcome two token
-    //     let token_two_mint_ref     = &borrow_global<Management>(market.outcome_token_two_address).mint_ref;
-    //     let token_two_transfer_ref = &borrow_global<Management>(market.outcome_token_two_address).transfer_ref;
-    //     let token_two_metadata     = market.outcome_token_two_metadata;
-
-    //     // Mint outcome token two
-    //     let minter_token_two_wallet = primary_fungible_store::ensure_primary_store_exists(minter_addr, token_two_metadata);
-    //     let fa = fungible_asset::mint(token_two_mint_ref, tokens_to_create);
-    //     fungible_asset::deposit_with_ref(token_two_transfer_ref, minter_token_two_wallet, fa);
-
-    //     // emit event for tokens created
-    //     event::emit(TokensCreatedEvent {
-    //         market_id,
-    //         account: minter_addr,
-    //         tokens_created: tokens_to_create
-    //     });
-    // }
-
-
-    // Burns equal amount of outcome1 and outcome2 tokens returning settlement currency tokens.
-    // public entry fun redeem_outcome_tokens(
-    //     redeemer: &signer,
-    //     market_id: u64, 
-    //     tokens_to_redeem: u64
-    // ) acquires Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
-
-    //     let oracle_signer_addr     = get_oracle_signer_addr();
-    //     let oracle_signer          = get_oracle_signer(oracle_signer_addr);
-    //     let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
-    //     let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
-    //     let redeemer_addr          = signer::address_of(redeemer);
-
-    //     // get creator address from registry (and verify that market exists)
-    //     let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
-        
-    //     // get creator markets
-    //     let markets                = borrow_global_mut<Markets>(creator_address);
-
-    //     // find market by id
-    //     let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
-
-    //     // transfer currency tokens (i.e. oracle tokens) from module to oracle
-    //     let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
-    //     primary_fungible_store::transfer(&oracle_signer, currency_metadata, redeemer_addr, tokens_to_redeem);
-
-    //     // Get the management resource for the outcome one token
-    //     let token_one_burn_ref     = &borrow_global<Management>(market.outcome_token_one_address).burn_ref;
-    //     let token_one_metadata     = market.outcome_token_one_metadata;
-
-    //     // Burn outcome token one
-    //     let token_one_fa = primary_fungible_store::withdraw(redeemer, token_one_metadata, tokens_to_redeem);
-    //     fungible_asset::burn(token_one_burn_ref, token_one_fa);
-
-    //     // Get the management resource for the outcome two token
-    //     let token_two_burn_ref     = &borrow_global<Management>(market.outcome_token_two_address).burn_ref;
-    //     let token_two_metadata     = market.outcome_token_two_metadata;
-
-    //     // Burn outcome token two
-    //     let token_two_fa = primary_fungible_store::withdraw(redeemer, token_two_metadata, tokens_to_redeem);
-    //     fungible_asset::burn(token_two_burn_ref, token_two_fa);
-
-    //     // emit event for tokens redeemed
-    //     event::emit(TokensRedeemedEvent {
-    //         market_id,
-    //         account: redeemer_addr,
-    //         tokens_redeemed: tokens_to_redeem
-    //     });
-    // }
-
-
-    // If the market is resolved, then all of caller's outcome tokens are burned and currency payout is made depending
-    // on the resolved market outcome and the amount of outcome tokens burned. If the market was resolved to the first
-    // outcome, then the payout equals balance of outcome1Token while outcome2Token provides nothing. If the market was
-    // resolved to the second outcome, then the payout equals balance of outcome2Token while outcome1Token provides
-    // nothing. If the market was resolved to the split outcome, then both outcome tokens provides half of their balance
-    // as currency payout.
-    // public entry fun settle_outcome_tokens(
-    //     settler: &signer,
-    //     market_id: u64
-    // ) acquires Markets, MarketRegistry, Management, OracleSigner, AdminProperties {
-
-    //     let oracle_signer_addr     = get_oracle_signer_addr();
-    //     let oracle_signer          = get_oracle_signer(oracle_signer_addr);
-    //     let market_registry        = borrow_global<MarketRegistry>(oracle_signer_addr);
-    //     let admin_properties       = borrow_global<AdminProperties>(oracle_signer_addr);
-    //     let settler_addr           = signer::address_of(settler);
-
-    //     // get creator address from registry (and verify that market exists)
-    //     let creator_address        = *smart_table::borrow(&market_registry.market_to_creator, market_id);
-        
-    //     // get creator markets
-    //     let markets                = borrow_global_mut<Markets>(creator_address);
-
-    //     // find market by id
-    //     let market                 = smart_table::borrow_mut(&mut markets.market_table, market_id);
-
-    //     // verify market has been resolved
-    //     assert!(market.resolved == true, ERROR_MARKET_HAS_NOT_BEEN_RESOLVED);
-
-    //     // Get the management resource for the outcome one token
-    //     let token_one_burn_ref     = &borrow_global<Management>(market.outcome_token_one_address).burn_ref;
-    //     let token_one_metadata     = market.outcome_token_one_metadata;
-
-    //     let token_one_balance      = primary_fungible_store::balance(settler_addr, token_one_metadata);
-
-    //     // Get the management resource for the outcome two token
-    //     let token_two_burn_ref     = &borrow_global<Management>(market.outcome_token_two_address).burn_ref;
-    //     let token_two_metadata     = market.outcome_token_two_metadata;
-    //     let token_two_balance      = primary_fungible_store::balance(settler_addr, token_two_metadata);
-
-    //     let payout;
-    //     if(market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_one)){
-    //         payout = token_one_balance; // outcome one
-    //     } else if (market.asserted_outcome_id == aptos_hash::keccak256(market.outcome_two)){
-    //         payout = token_two_balance; // outcome two
-    //     } else {
-    //         payout = (token_one_balance + token_two_balance) / 2;
-    //     };
-
-    //     // Burn outcome tokens
-    //     let token_one_fa = primary_fungible_store::withdraw(settler, token_one_metadata, token_one_balance);
-    //     fungible_asset::burn(token_one_burn_ref, token_one_fa);
-
-    //     let token_two_fa = primary_fungible_store::withdraw(settler, token_two_metadata, token_two_balance);
-    //     fungible_asset::burn(token_two_burn_ref, token_two_fa);
-
-    //     // transfer payout to settler
-    //     let currency_metadata = option::destroy_some(admin_properties.currency_metadata);
-    //     primary_fungible_store::transfer(&oracle_signer, currency_metadata, settler_addr, payout);
-
-    //     // emit event for tokens settled
-    //     event::emit(TokensSettledEvent {
-    //         market_id,
-    //         account: settler_addr,
-    //         payout,
-    //         outcome_one_tokens: token_one_balance,
-    //         outcome_two_tokens: token_two_balance
-    //     });
-    // }
 
     // -----------------------------------
     // Views
@@ -1915,49 +1706,6 @@ module aptosforo_addr::prediction_market {
             liquidity_pool.lp_token_address
         )
     }
-
-
-    // #[view]
-    // public fun get_assertion_id(
-    //     asserter: address,
-    //     claim: vector<u8>, 
-    //     time: u64,
-    //     bond: u64, 
-    //     liveness: u64,
-    //     identifier: vector<u8>
-    // ) : vector<u8> {
-
-    //     let asserter_bytes = bcs::to_bytes<address>(&asserter);
-    //     let time_bytes     = bcs::to_bytes<u64>(&time);
-    //     let bond_bytes     = bcs::to_bytes<u64>(&bond);
-    //     let liveness_bytes = bcs::to_bytes<u64>(&liveness);
-        
-    //     let assertion_id_vector = vector::empty<u8>();
-    //     vector::append(&mut assertion_id_vector, asserter_bytes);
-    //     vector::append(&mut assertion_id_vector, claim);
-    //     vector::append(&mut assertion_id_vector, time_bytes);
-    //     vector::append(&mut assertion_id_vector, bond_bytes);
-    //     vector::append(&mut assertion_id_vector, liveness_bytes);
-    //     vector::append(&mut assertion_id_vector, identifier);
-    //     aptos_hash::keccak256(assertion_id_vector)
-    // }
-
-
-    // original: refactor to use numbers for market id for easier fetching on the frontend
-    // #[view]
-    // public fun get_market_id(
-    //     creator: address,
-    //     time_bytes: vector<u8>,
-    //     description: vector<u8>
-    // ): vector<u8> {
-    //     let creator_bytes     = bcs::to_bytes<address>(&creator);
-
-    //     let market_id_vector  = vector::empty<u8>();
-    //     vector::append(&mut market_id_vector, creator_bytes);
-    //     vector::append(&mut market_id_vector, time_bytes);
-    //     vector::append(&mut market_id_vector, description);
-    //     aptos_hash::keccak256(market_id_vector)
-    // }
 
 
     // stamp assertion - i.e. ancillary data
