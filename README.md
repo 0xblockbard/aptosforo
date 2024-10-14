@@ -100,7 +100,7 @@ Secondly, while preserving the underlying architecture as closely as possible, w
 UMA Protocol’s Solidity smart contracts referenced:
 
 - [Optimistic Oracle V3](https://github.com/UMAprotocol/protocol/blob/master/packages/core/contracts/optimistic-oracle-v3/implementation/OptimisticOracleV3.sol)
-- [Full Policy Escalation Manager](https://github.com/UMAprotocol/protocol/blob/master/packages/core/contracts/-optimistic-oracle-v3/implementation/escalation-manager/FullPolicyEscalationManager.sol)
+- [Full Policy Escalation Manager](https://github.com/UMAprotocol/protocol/blob/master/packages/core/contracts/optimistic-oracle-v3/implementation/escalation-manager/FullPolicyEscalationManager.sol)
 - [Prediction Market](https://github.com/UMAprotocol/dev-quickstart-oov3/blob/master/src/PredictionMarket.sol)
 
 
