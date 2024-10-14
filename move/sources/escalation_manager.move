@@ -219,6 +219,7 @@ module aptosforo_addr::escalation_manager {
     // ---------------
 
     /**
+     * With Reference from UMA Protocol:
      * @notice Set the arbitration resolution for a given identifier, time, and ancillary data.
      * @param identifier uniquely identifies the price requested.
      * @param asserter_bytes asserter address as vector
