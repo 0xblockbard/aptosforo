@@ -77,7 +77,7 @@ Once an outcome token has been bought or sold successfully, the transaction is r
 
 The frontend demo for AptosForo is maintained in a separate repository to ensure that the Move smart contracts remain focused and well-organised. 
 
-It can be found here: AptosForo Frontend Github
+It can be found here: [AptosForo Frontend Github](https://github.com/0xblockbard/aptosforo-frontend)
 
 ![Welcome](https://res.cloudinary.com/blockbard/image/upload/c_scale,w_auto,q_auto,f_auto,fl_lossy/v1728917557/get-started-screenshot_j8ngmp.png)
 
