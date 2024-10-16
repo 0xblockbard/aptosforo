@@ -193,6 +193,16 @@ The following section provides a breakdown of the tests that validate each funct
 
 ![Code Coverage](https://res.cloudinary.com/blockbard/image/upload/c_scale,w_auto,q_auto,f_auto,fl_lossy/v1728916938/aptosforo-code-coverage_shdyzl.png)
 
+## Deployment Steps
+
+For compiling and deploying our package:
+
+```bash
+# ensure build directory is empty
+aptos move compile --package-dir move
+aptos move publish --package-dir move
+```
+
 ## Dummy Data Script
 
 We have also included a dummy data script to populate the AptosForo Demo MVP with sample prediction markets referenced from Polymarket. This helps to demonstrate our features and provides a realistic view of how markets appear and function on the site.
